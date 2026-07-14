@@ -1,0 +1,62 @@
+services:
+  app:
+    build: .
+    container_name: online-bus-app
+    ports:
+      - "3030:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/online-bus-db?schema=public
+      NEXTAUTH_URL: http:localhost:3000
+      TELEBIRR_MERCHANT_ID: ${TELEBIRR_MERCHANT_ID:-}
+      TELEBIRR_API_KEY: ${TELEBIRR_API_KEY:-}
+      TELEBIRR_API_URL: ${TELEBIRR_API_URL:-https://api.telebirr.com}
+      TELEBIRR_CALLBACK_URL: ${TELEBIRR_CALLBACK_URL:-}
+      CBE_BIRR_MERCHANT_ID: ${CBE_BIRR_MERCHANT_ID:-}
+      CBE_BIRR_API_KEY: ${CBE_BIRR_API_KEY:-}
+      CBE_BIRR_API_URL: ${CBE_BIRR_API_URL:-https://api.cbebirr.com}
+      CBE_BIRR_CALLBACK_URL: ${CBE_BIRR_CALLBACK_URL:-}
+      M_BIRR_MERCHANT_ID: ${M_BIRR_MERCHANT_ID:-}
+      M_BIRR_API_KEY: ${M_BIRR_API_KEY:-}
+      M_BIRR_API_URL: ${M_BIRR_API_URL:-https://api.mbirr.com}
+      M_BIRR_CALLBACK_URL: ${M_BIRR_CALLBACK_URL:-}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+  db:
+    image: postgres:15
+    container_name: online-bus-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: online_bus_ticket_reservation_ms
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    container_name: online-bus-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+volumes:
+  pgdata:
+  redisdata:

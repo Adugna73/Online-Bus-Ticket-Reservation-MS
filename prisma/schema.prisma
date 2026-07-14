@@ -1,0 +1,705 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PASSENGER
+  STAFF
+  ADMIN
+  MECHANIC
+}
+
+enum SeatType {
+  STANDARD
+  VIP
+}
+
+enum TripStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentMethod {
+  TELEBIRR
+  CBE_BIRR
+  M_BIRR
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Station {
+  id        String   @id @default(uuid())
+  name      String
+  city      String
+  code      String   @unique
+  address   String?
+  staff     User[]
+  routesFrom Route[] @relation("RouteOrigin")
+  routesTo   Route[] @relation("RouteDestination")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([city])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  fullName     String
+  email        String   @unique
+  phone        String?
+  passwordHash String
+  role         UserRole @default(PASSENGER)
+  stationId    String?
+  station      Station? @relation(fields: [stationId], references: [id])
+  bookings     Booking[]
+  paymentProofs BookingPaymentProof[]
+  customerServiceAssignments CustomerServiceAssignment[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([role])
+}
+
+model BusCompany {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  contactEmail String?
+  contactPhone String?
+  buses        Bus[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Bus {
+  id          String   @id @default(uuid())
+  companyId   String
+  company     BusCompany @relation(fields: [companyId], references: [id])
+  plateNumber String   @unique
+  sideNumber  String?
+  model       String?
+  level       String?
+  driverName  String?
+  imageUrl    String?
+  amenities   Json?
+  safetyChecklist Json?
+  seatLayout  Json?
+  seatCount   Int
+  status      String   @default("active")
+  // GAP 12: Accessibility & inclusivity flags
+  wheelchairAccessible Boolean @default(false)
+  womenOnly             Boolean @default(false)
+  hasPrioritySeating    Boolean @default(false)
+  audioAnnouncements    Boolean @default(false)
+  garageId    String?
+  garage      Garage?  @relation(fields: [garageId], references: [id])
+  seats       Seat[]
+  trips       Trip[]
+  maintenances VehicleMaintenance[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+model Seat {
+  id          String   @id @default(uuid())
+  busId       String
+  bus         Bus      @relation(fields: [busId], references: [id])
+  seatNumber  String
+  seatType    SeatType @default(STANDARD)
+  isActive    Boolean  @default(true)
+  bookingSeats BookingSeat[]
+
+  @@unique([busId, seatNumber])
+}
+
+model Route {
+  id                    String   @id @default(uuid())
+  originStationId       String
+  destinationStationId  String
+  originStation         Station @relation("RouteOrigin", fields: [originStationId], references: [id])
+  destinationStation    Station @relation("RouteDestination", fields: [destinationStationId], references: [id])
+  distanceKm            Int?
+  defaultPrice          Float?
+  trips                 Trip[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([originStationId, destinationStationId])
+}
+
+model Trip {
+  id        String    @id @default(uuid())
+  routeId   String
+  busId     String
+  departAt  DateTime
+  arriveAt  DateTime
+  basePrice Float
+  status    TripStatus @default(SCHEDULED)
+  route     Route     @relation(fields: [routeId], references: [id])
+  bus       Bus       @relation(fields: [busId], references: [id])
+  bookings  Booking[]
+  bookingSeats BookingSeat[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([routeId])
+  @@index([busId])
+  @@index([departAt])
+}
+
+model Booking {
+  id         String        @id @default(uuid())
+  bookingRef String        @unique
+  userId     String
+  tripId     String
+  status     BookingStatus @default(PENDING)
+  totalPrice Float
+  passengerFullName String?
+  passengerPhone    String?
+  passengerEmail    String?
+  passengerIdNumber String?
+  passengerGender   String?
+  passengerAge      Int?
+  emergencyContact  String?
+  notes             String?
+  user       User          @relation(fields: [userId], references: [id])
+  trip       Trip          @relation(fields: [tripId], references: [id])
+  seats      BookingSeat[]
+  payment    Payment?
+  receipt    Receipt?
+  paymentProofs BookingPaymentProof[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tripId])
+}
+
+model BookingSeat {
+  id         String  @id @default(uuid())
+  bookingId  String
+  tripId     String
+  seatId     String
+  fare       Float
+  booking    Booking @relation(fields: [bookingId], references: [id])
+  trip       Trip    @relation(fields: [tripId], references: [id])
+  seat       Seat    @relation(fields: [seatId], references: [id])
+
+  @@unique([tripId, seatId])
+  @@index([bookingId])
+  @@index([seatId])
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  bookingId      String        @unique
+  method         PaymentMethod
+  status         PaymentStatus @default(PENDING)
+  amount         Float
+  transactionRef String?
+  paidAt         DateTime?
+  booking        Booking       @relation(fields: [bookingId], references: [id])
+  createdAt      DateTime      @default(now())
+}
+
+model Receipt {
+  id              String   @id @default(uuid())
+  bookingId       String   @unique
+  receiptNumber   String   @unique
+  pdfUrl          String?
+  chapaReceiptUrl String?
+  emailedTo       String?
+  issuedAt        DateTime @default(now())
+  booking         Booking  @relation(fields: [bookingId], references: [id])
+}
+
+model BookingPaymentProof {
+  id           String   @id @default(uuid())
+  bookingId    String
+  uploadedById String?
+  fileUrl      String
+  fileName     String
+  fileType     String?
+  createdAt    DateTime @default(now())
+  booking      Booking  @relation(fields: [bookingId], references: [id])
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id])
+
+  @@index([bookingId])
+  @@index([uploadedById])
+}
+
+// ============================================================================
+// GAP-FILLING MODELS (scaffolded stubs for the 12 critical ecosystem gaps)
+// All integrations are stubbed/mocked; real providers are wired in lib/services.
+// ============================================================================
+
+// ---- GAP 1: Payment Processing ----
+enum PaymentProvider {
+  TELEBIRR
+  CBE_BIRR
+  M_BIRR
+  CHAPA
+  STRIPE
+  SMS_USSD
+  CASH_AGENT
+}
+
+enum EscrowStatus {
+  HELD
+  RELEASED
+  REFUNDED
+}
+
+model TransactionLog {
+  id             String   @id @default(uuid())
+  paymentId      String?
+  event          String
+  provider       PaymentProvider?
+  payload        Json?
+  hash           String   @unique // tamper-proof chain hash
+  prevHash       String?
+  createdAt      DateTime @default(now())
+  @@index([paymentId])
+}
+
+model Refund {
+  id             String   @id @default(uuid())
+  paymentId      String
+  amount         Float
+  reason         String?
+  status         PaymentStatus @default(PENDING)
+  processedAt    DateTime?
+  createdAt      DateTime @default(now())
+  @@index([paymentId])
+}
+
+model Escrow {
+  id             String   @id @default(uuid())
+  bookingId      String   @unique
+  amount         Float
+  status         EscrowStatus @default(HELD)
+  heldAt         DateTime @default(now())
+  releasedAt     DateTime?
+}
+
+// ---- GAP 2: Seat Availability / real-time locking ----
+enum SeatHoldStatus {
+  HELD
+  RELEASED
+  CONVERTED
+}
+
+enum SeatEventKind {
+  HOLD
+  RELEASE
+  BOOK
+  UNBOOK
+  BLOCK
+}
+
+model SeatHold {
+  id             String   @id @default(uuid())
+  tripId         String
+  seatId         String
+  userId         String?
+  expiresAt      DateTime
+  status         SeatHoldStatus @default(HELD)
+  createdAt      DateTime @default(now())
+  @@unique([tripId, seatId, status])
+  @@index([tripId])
+}
+
+model SeatEvent {
+  id             String   @id @default(uuid())
+  tripId         String
+  seatId         String
+  kind           SeatEventKind
+  userId         String?
+  meta           Json?
+  createdAt      DateTime @default(now())
+  @@index([tripId, seatId])
+}
+
+// ---- GAP 3: Support & Dispute Resolution ----
+enum SupportPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model SupportTicket {
+  id             String   @id @default(uuid())
+  userId         String?
+  subject        String
+  priority       SupportPriority @default(MEDIUM)
+  status         TicketStatus @default(OPEN)
+  bookingId      String?
+  language       String   @default("en")
+  dueAt          DateTime? // SLA target
+  messages       ChatMessage[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  @@index([userId])
+}
+
+model ChatMessage {
+  id             String   @id @default(uuid())
+  ticketId        String
+  sender          String   // "user" | "agent" | "ai" | "operator"
+  content         String
+  locale          String   @default("en")
+  createdAt       DateTime @default(now())
+  ticket          SupportTicket @relation(fields: [ticketId], references: [id])
+  @@index([ticketId])
+}
+
+model Dispute {
+  id             String   @id @default(uuid())
+  bookingId      String
+  userId         String?
+  reason         String
+  resolution     String?
+  status         TicketStatus @default(OPEN)
+  createdAt      DateTime @default(now())
+  resolvedAt     DateTime?
+}
+
+// ---- GAP 4: Operator Tools ----
+model DynamicPricingRule {
+  id             String   @id @default(uuid())
+  routeId        String?
+  minFillPct     Int      @default(0)
+  maxFillPct     Int      @default(100)
+  multiplier     Float    @default(1.0)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+}
+
+model OperatorFraudFlag {
+  id             String   @id @default(uuid())
+  busId          String?
+  conductorId    String?
+  reason         String
+  severity       String   @default("low")
+  createdAt      DateTime @default(now())
+}
+
+// ---- GAP 5: Digital Divide (SMS/USSD/voice/agent/offline QR) ----
+enum ChannelKind {
+  SMS
+  USSD
+  VOICE
+  AGENT
+  WEB
+}
+
+model AgentBookingChannel {
+  id             String   @id @default(uuid())
+  agentName      String
+  phone          String?
+  location       String?
+  commissionPct  Float    @default(0)
+  createdAt      DateTime @default(now())
+}
+
+model OfflineTicket {
+  id             String   @id @default(uuid())
+  bookingId      String   @unique
+  qrPayload      String
+  issuedAt       DateTime @default(now())
+}
+
+model ChannelSession {
+  id             String   @id @default(uuid())
+  channel        ChannelKind
+  msisdn         String?
+  ussdSession    String?
+  state          Json?
+  createdAt      DateTime @default(now())
+}
+
+// ---- GAP 6: Real-Time Tracking ----
+model BusLocation {
+  id             String   @id @default(uuid())
+  busId          String
+  tripId         String?
+  lat            Float
+  lng            Float
+  speed          Float?
+  heading        Float?
+  etaMinutes     Int?
+  recordedAt     DateTime @default(now())
+  @@index([busId, recordedAt])
+}
+
+model SosAlert {
+  id             String   @id @default(uuid())
+  userId         String?
+  bookingId      String?
+  busId          String?
+  lat            Float?
+  lng            Float?
+  resolved       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
+
+// ---- GAP 7: Social & Community ----
+model Review {
+  id             String   @id @default(uuid())
+  bookingId      String   @unique
+  userId         String?
+  rating         Int
+  comment        String?
+  photoUrls      Json?
+  verified       Boolean  @default(false) // only after travel
+  createdAt      DateTime @default(now())
+}
+
+model TravelBuddy {
+  id             String   @id @default(uuid())
+  tripId         String
+  userId         String
+  optedIn        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  @@unique([tripId, userId])
+}
+
+model SafetyReport {
+  id             String   @id @default(uuid())
+  bookingId      String?
+  userId         String?
+  category       String
+  description    String?
+  createdAt      DateTime @default(now())
+}
+
+// ---- GAP 8: Value-Added Services ----
+model TravelInsurance {
+  id             String   @id @default(uuid())
+  bookingId      String   @unique
+  premium        Float
+  covered        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+}
+
+model CargoBooking {
+  id             String   @id @default(uuid())
+  tripId         String
+  senderPhone    String
+  description    String?
+  weightKg       Float?
+  price          Float
+  createdAt      DateTime @default(now())
+}
+
+model HotelPartner {
+  id             String   @id @default(uuid())
+  name           String   @unique
+  city           String?
+  commissionPct  Float    @default(0)
+  createdAt      DateTime @default(now())
+}
+
+model GroupBooking {
+  id             String   @id @default(uuid())
+  tripId         String
+  organizerId    String?
+  seatsCount     Int
+  discountPct    Float    @default(10)
+  createdAt      DateTime @default(now())
+}
+
+// ---- GAP 9: Enterprise & Government ----
+model CorporateAccount {
+  id             String   @id @default(uuid())
+  name           String   @unique
+  billingEmail   String?
+  creditLimit    Float    @default(0)
+  createdAt      DateTime @default(now())
+}
+
+model GovernmentReport {
+  id             String   @id @default(uuid())
+  period         String
+  taxCollected   Float
+  payload        Json?
+  generatedAt    DateTime @default(now())
+}
+
+model NgoBulkBooking {
+  id             String   @id @default(uuid())
+  ngoName        String
+  tripId         String
+  seatsCount     Int
+  specialPricing Float?
+  createdAt      DateTime @default(now())
+}
+
+// ---- GAP 10: Analytics & BI ----
+model AnalyticsEvent {
+  id             String   @id @default(uuid())
+  kind           String
+  userId         String?
+  meta           Json?
+  createdAt      DateTime @default(now())
+  @@index([kind, createdAt])
+}
+
+model RouteHeatmap {
+  id             String   @id @default(uuid())
+  routeId        String?
+  originCity     String?
+  destCity       String?
+  intensity      Float
+  bucket         DateTime
+  @@index([bucket])
+}
+
+// ---- GAP 11: Gamification ----
+enum LoyaltyTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+  DIAMOND
+}
+
+model UserLoyalty {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  points         Int      @default(0)
+  tier           LoyaltyTier @default(BRONZE)
+  updatedAt      DateTime @updatedAt
+}
+
+model Badge {
+  id             String   @id @default(uuid())
+  code           String   @unique
+  name           String
+  description    String?
+}
+
+model UserBadge {
+  id             String   @id @default(uuid())
+  userId         String
+  badgeId        String
+  awardedAt      DateTime @default(now())
+  @@unique([userId, badgeId])
+}
+
+model Referral {
+  id             String   @id @default(uuid())
+  referrerId     String
+  referredEmail  String
+  rewardBirr     Float    @default(50)
+  redeemed       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  @@index([referrerId])
+}
+
+// ============================================================================
+// GARAGE & VEHICLE MAINTENANCE
+// ============================================================================
+
+model Garage {
+  id           String   @id @default(uuid())
+  name         String
+  address      String?
+  city         String?
+  contactPhone String?
+  contactEmail String?
+  managerName  String?
+  buses        Bus[]
+  maintenances VehicleMaintenance[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([city])
+}
+
+enum VehicleMaintenanceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  PARTS_ORDERED
+  COMPLETED
+  CANCELLED
+}
+
+model VehicleMaintenance {
+  id                   String                 @id @default(uuid())
+  busId                String
+  garageId             String
+  status               VehicleMaintenanceStatus @default(SCHEDULED)
+  partsNeedingMaintenance String?
+  description          String?
+  mechanicNotes        String?
+  scheduledDate        DateTime?
+  completedDate        DateTime?
+  ownerPickupDate      DateTime?
+  ownerDropoffDate     DateTime?
+  estimatedCost        Float?
+  actualCost           Float?
+  updatedBy            String?
+  bus                  Bus                    @relation(fields: [busId], references: [id])
+  garage               Garage                 @relation(fields: [garageId], references: [id])
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@index([busId])
+  @@index([garageId])
+  @@index([status])
+}
+
+// ============================================================================
+// CUSTOMER SERVICE ASSIGNMENTS
+// ============================================================================
+
+enum CustomerServiceType {
+  REFUND
+  COMPLAINT
+  GENERAL
+}
+
+model CustomerServiceAssignment {
+  id          String              @id @default(uuid())
+  userId      String
+  type        CustomerServiceType
+  location    String?
+  routeId     String?
+  description String?
+  active      Boolean             @default(true)
+  user        User                @relation(fields: [userId], references: [id])
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([userId])
+  @@index([type])
+}
