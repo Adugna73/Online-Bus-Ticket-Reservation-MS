@@ -32,28 +32,20 @@ export default function LoginForm({ showCard = true }: { showCard?: boolean }) {
     useEffect(() => {
         if (status === "authenticated" && session?.user) {
             const role = String((session.user as any).role || "").toLowerCase();
-            const rolePath =
-                role === "admin"
-                    ? "admin"
-                    : role === "staff"
-                      ? "supervisor"
-                      : role === "passenger"
-                        ? "passenger"
-                        : role === "manager"
-                          ? "manager"
-                          : role === "supervisor"
-                            ? "supervisor"
-                            : role === "mechanic"
-                              ? "mechanic"
-                              : "passenger";
             const redirectPath =
-                rolePath === "passenger"
-                    ? `/${rolePath}/bookings`
-                    : rolePath === "manager"
-                      ? `/${rolePath}/managerial-dashboard`
-                      : rolePath === "mechanic"
-                        ? `/${rolePath}/maintenance`
-                        : `/${rolePath}/dashboard`;
+                role === "admin"
+                    ? "/admin/dashboard"
+                    : role === "staff" || role === "supervisor"
+                      ? "/supervisor/dashboard"
+                      : role === "manager"
+                        ? "/manager/managerial-dashboard"
+                        : role === "mechanic"
+                          ? "/mechanic/tasks"
+                          : role === "garage_owner"
+                            ? "/garage-owner/dashboard"
+                            : role === "driver"
+                              ? "/driver/bus"
+                              : "/passenger/bookings";
             router.replace(redirectPath);
         }
     }, [status, session, router]);

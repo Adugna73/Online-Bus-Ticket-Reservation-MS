@@ -76,23 +76,50 @@ export async function POST(req: Request) {
     const rawDesc = `${originName} to ${destName}`;
     const description = rawDesc.replace(/[^a-zA-Z0-9 _.\-]/g, "").slice(0, 100);
 
-    const init = await chapa.initialize({
+    const phone =
+      String(body?.phone || "").trim() ||
+      booking.passengerPhone ||
+      booking.user?.phone ||
+      undefined;
+
+    // Chapa performs strict email validation and rejects some legitimate
+    // domains (e.g. `.et` addresses like `user@bus.et`). If init fails with
+    // `validation.email`, retry once with a valid placeholder email so the
+    // checkout can proceed — Chapa only uses it for the receipt, and the
+    // booking's real contact is stored on our side.
+    const FALLBACK_EMAIL = `passenger+${bookingId.slice(0, 8)}@gmail.com`;
+
+    const initInput = {
       amount: booking.totalPrice,
       tx_ref,
       email,
       first_name,
       last_name,
-      phone:
-        String(body?.phone || "").trim() ||
-        booking.passengerPhone ||
-        booking.user?.phone ||
-        undefined,
+      phone,
       return_url,
       callback_url,
       title: "Bus Ticket",
       description,
       bookingId,
-    });
+    };
+
+    let init: chapa.ChapaInitResult;
+    try {
+      init = await chapa.initialize(initInput);
+    } catch (err: any) {
+      const isEmailError =
+        err instanceof chapa.ChapaApiError &&
+        /validation\.email/i.test(JSON.stringify(err.details ?? ""));
+      if (isEmailError && email !== FALLBACK_EMAIL) {
+        console.warn(
+          "[chapa] email rejected by Chapa, retrying with fallback",
+          email,
+        );
+        init = await chapa.initialize({ ...initInput, email: FALLBACK_EMAIL });
+      } else {
+        throw err;
+      }
+    }
 
     // Persist a pending intent so the return/callback flow can recover
     // bookingId + method from tx_ref alone (Chapa may drop return_url params).
@@ -106,6 +133,21 @@ export async function POST(req: Request) {
       test_mode: process.env.PAYMENT_TEST_MODE === "1",
     });
   } catch (error: any) {
+    if (error instanceof chapa.ChapaRateLimitError) {
+      const retryAfter = error.retryAfter ?? 30;
+      console.warn("[chapa] rate limited, retry after", retryAfter, "s");
+      return NextResponse.json(
+        { error: "rate_limited", message: error.message, retry_after: retryAfter },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } },
+      );
+    }
+    if (error instanceof chapa.ChapaApiError) {
+      console.error("[chapa] init failed", error.status, error.message, error.details);
+      return NextResponse.json(
+        { error: "chapa_error", message: error.message, status: error.status },
+        { status: error.status >= 400 && error.status < 600 ? error.status : 502 },
+      );
+    }
     console.error("[chapa] init failed", error);
     return NextResponse.json(
       { error: error?.message || "server_error" },

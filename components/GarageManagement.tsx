@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { Trash2, Wrench, Phone, Mail, MapPin, Plus, Calendar, CheckCircle, Clock, User } from "lucide-react";
+import { Trash2, Wrench, Phone, Mail, MapPin, Plus, Calendar, CheckCircle, Clock, User, AlertTriangle } from "lucide-react";
 
 type Garage = {
     id: string;
@@ -13,8 +13,9 @@ type Garage = {
     contactPhone?: string | null;
     contactEmail?: string | null;
     managerName?: string | null;
+    owner?: { id: string; fullName: string; email: string } | null;
     buses?: any[];
-    _count?: { buses: number; maintenances: number };
+    _count?: { buses: number; maintenances: number; mechanics: number };
 };
 
 type Bus = {
@@ -35,6 +36,15 @@ type Maintenance = {
     partsNeedingMaintenance?: string | null;
     description?: string | null;
     mechanicNotes?: string | null;
+    rejectionReason?: string | null;
+    costRejectedReason?: string | null;
+    paymentTxRef?: string | null;
+    telebirrRef?: string | null;
+    telebirrAmount?: number | null;
+    driverAcceptedAt?: string | null;
+    busReleasedAt?: string | null;
+    adminConfirmedAt?: string | null;
+    acceptedAt?: string | null;
     scheduledDate?: string | null;
     completedDate?: string | null;
     ownerPickupDate?: string | null;
@@ -43,13 +53,24 @@ type Maintenance = {
     actualCost?: number | null;
     bus?: Bus;
     garage?: { id: string; name: string };
+    assignedMechanic?: { id: string; name: string; position: string; phone: string | null } | null;
     createdAt: string;
 };
 
 const STATUS_COLORS: Record<string, string> = {
+    REQUESTED: "bg-amber-100 text-amber-700 border-amber-300",
+    ACCEPTED: "bg-blue-100 text-blue-700 border-blue-300",
+    NOT_FIXABLE: "bg-red-100 text-red-700 border-red-300",
+    COST_PENDING: "bg-yellow-100 text-yellow-700 border-yellow-300",
+    COST_APPROVED: "bg-emerald-100 text-emerald-700 border-emerald-300",
     SCHEDULED: "bg-blue-100 text-blue-700 border-blue-300",
     IN_PROGRESS: "bg-amber-100 text-amber-700 border-amber-300",
     PARTS_ORDERED: "bg-purple-100 text-purple-700 border-purple-300",
+    REPAIR_DONE: "bg-teal-100 text-teal-700 border-teal-300",
+    AWAITING_PAYMENT: "bg-violet-100 text-violet-700 border-violet-300",
+    PAID: "bg-green-100 text-green-700 border-green-300",
+    BUS_READY: "bg-sky-100 text-sky-700 border-sky-300",
+    DRIVER_ACCEPTED: "bg-cyan-100 text-cyan-700 border-cyan-300",
     COMPLETED: "bg-green-100 text-green-700 border-green-300",
     CANCELLED: "bg-red-100 text-red-700 border-red-300",
 };
@@ -85,11 +106,12 @@ export default function GarageManagement() {
     const [garages, setGarages] = useState<Garage[]>([]);
     const [buses, setBuses] = useState<Bus[]>([]);
     const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
+    const [garageOwners, setGarageOwners] = useState<{ id: string; fullName: string; email: string }[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"garages" | "maintenance">(
-        canSeeGarageTab ? "garages" : "maintenance",
+        "maintenance",
     );
 
     const [newGarage, setNewGarage] = useState({
@@ -99,6 +121,7 @@ export default function GarageManagement() {
         contactPhone: "",
         contactEmail: "",
         managerName: "",
+        ownerId: "",
     });
 
     const [newMaintenance, setNewMaintenance] = useState({
@@ -114,14 +137,16 @@ export default function GarageManagement() {
     const loadData = async () => {
         try {
             setLoading(true);
-            const [garagesRes, busesRes, maintRes] = await Promise.all([
+            const [garagesRes, busesRes, maintRes, ownersRes] = await Promise.all([
                 fetch("/api/garages"),
                 fetch("/api/buses"),
                 fetch("/api/vehicle-maintenance"),
+                fetch("/api/users?role=garage_owner"),
             ]);
             if (garagesRes.ok) setGarages(await garagesRes.json());
             if (busesRes.ok) setBuses(await busesRes.json());
             if (maintRes.ok) setMaintenances(await maintRes.json());
+            if (ownersRes.ok) setGarageOwners(await ownersRes.json());
         } catch (err: any) {
             setError(err?.message || "Failed to load data");
         } finally {
@@ -144,7 +169,15 @@ export default function GarageManagement() {
             const res = await fetch("/api/garages", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(newGarage),
+                body: JSON.stringify({
+                    name: newGarage.name,
+                    address: newGarage.address || undefined,
+                    city: newGarage.city || undefined,
+                    contactPhone: newGarage.contactPhone || undefined,
+                    contactEmail: newGarage.contactEmail || undefined,
+                    managerName: newGarage.managerName || undefined,
+                    ownerId: newGarage.ownerId || undefined,
+                }),
             });
             if (!res.ok) throw new Error("Failed to create garage");
             setNewGarage({
@@ -154,6 +187,7 @@ export default function GarageManagement() {
                 contactPhone: "",
                 contactEmail: "",
                 managerName: "",
+                ownerId: "",
             });
             setMessage("Garage created successfully");
             await loadData();
@@ -346,6 +380,22 @@ export default function GarageManagement() {
                                     })
                                 }
                             />
+                            <select
+                                className="h-10 w-full rounded border px-3 text-sm"
+                                value={newGarage.ownerId}
+                                onChange={(e) =>
+                                    setNewGarage({ ...newGarage, ownerId: e.target.value })
+                                }
+                            >
+                                <option value="">Select owner (optional)</option>
+                                {garageOwners
+                                    .filter((o) => !garages.some((g) => g.owner?.id === o.id))
+                                    .map((o) => (
+                                        <option key={o.id} value={o.id}>
+                                            {o.fullName} ({o.email})
+                                        </option>
+                                    ))}
+                            </select>
                         </div>
                         <Button className="mt-3" onClick={handleCreateGarage}>
                             Create Garage
@@ -372,6 +422,11 @@ export default function GarageManagement() {
                                             {garage.managerName && (
                                                 <p className="text-sm text-muted-foreground mt-1">
                                                     Manager: {garage.managerName}
+                                                </p>
+                                            )}
+                                            {garage.owner && (
+                                                <p className="text-sm text-muted-foreground mt-1">
+                                                    Owner: {garage.owner.fullName}
                                                 </p>
                                             )}
                                         </div>
@@ -408,7 +463,10 @@ export default function GarageManagement() {
                                             {garage._count?.buses || 0} buses
                                         </span>
                                         <span className="rounded bg-amber-100 px-2 py-1 text-amber-700">
-                                            {garage._count?.maintenances || 0} maintenance records
+                                            {garage._count?.maintenances || 0} maint.
+                                        </span>
+                                        <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">
+                                            {garage._count?.mechanics || 0} mechanics
                                         </span>
                                     </div>
                                     {garage.buses && garage.buses.length > 0 && (
@@ -552,6 +610,7 @@ export default function GarageManagement() {
                                         <th className="px-3 py-2 font-semibold">Bus</th>
                                         <th className="px-3 py-2 font-semibold">Status</th>
                                         <th className="px-3 py-2 font-semibold">Garage</th>
+                                        <th className="px-3 py-2 font-semibold">Mechanic</th>
                                         <th className="px-3 py-2 font-semibold">Parts</th>
                                         <th className="px-3 py-2 font-semibold">Scheduled</th>
                                         <th className="px-3 py-2 font-semibold">Drop-off</th>
@@ -591,6 +650,12 @@ export default function GarageManagement() {
                                                 </td>
                                                 <td className="px-3 py-2">
                                                     {m.garage?.name || "Unknown"}
+                                                </td>
+                                                <td className="px-3 py-2 text-xs">
+                                                    {(m as any).assignedMechanic?.name || "—"}
+                                                    {(m as any).assignedMechanic?.position && (
+                                                        <span className="text-muted-foreground"> ({(m as any).assignedMechanic.position})</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-3 py-2">
                                                     {m.partsNeedingMaintenance || "—"}
@@ -647,12 +712,89 @@ export default function GarageManagement() {
                                                                 })
                                                             }
                                                         >
+                                                            <option value="REQUESTED">Requested</option>
+                                                            <option value="ACCEPTED">Accepted</option>
+                                                            <option value="NOT_FIXABLE">Not Fixable</option>
+                                                            <option value="COST_PENDING">Cost Pending</option>
+                                                            <option value="COST_APPROVED">Cost Approved</option>
                                                             <option value="SCHEDULED">Scheduled</option>
                                                             <option value="IN_PROGRESS">In Progress</option>
                                                             <option value="PARTS_ORDERED">Parts Ordered</option>
+                                                            <option value="REPAIR_DONE">Repair Done</option>
+                                                            <option value="AWAITING_PAYMENT">Awaiting Payment</option>
+                                                            <option value="PAID">Paid</option>
+                                                            <option value="BUS_READY">Bus Ready</option>
+                                                            <option value="DRIVER_ACCEPTED">Driver Accepted</option>
                                                             <option value="COMPLETED">Completed</option>
                                                             <option value="CANCELLED">Cancelled</option>
                                                         </select>
+                                                        {(m as any).rejectionReason && (
+                                                            <div className="text-[10px] text-red-600 mt-1 max-w-[100px] truncate">
+                                                                {(m as any).rejectionReason}
+                                                            </div>
+                                                        )}
+                                                        {m.status === "COST_PENDING" && isAdmin && (
+                                                            <div className="flex gap-1 mt-1">
+                                                                <button
+                                                                    className="h-6 rounded bg-emerald-100 px-1.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200"
+                                                                    onClick={() => handleUpdateMaintenance(m.id, { status: "COST_APPROVED" })}
+                                                                >
+                                                                    Approve
+                                                                </button>
+                                                                <button
+                                                                    className="h-6 rounded bg-red-100 px-1.5 text-[10px] font-medium text-red-700 hover:bg-red-200"
+                                                                    onClick={() => {
+                                                                        const reason = prompt("Rejection reason:");
+                                                                        if (reason) handleUpdateMaintenance(m.id, { status: "ACCEPTED", costRejectedReason: reason });
+                                                                    }}
+                                                                >
+                                                                    Reject
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                        {m.status === "AWAITING_PAYMENT" && isAdmin && (
+                                                            <div className="flex gap-1 mt-1">
+                                                                <button
+                                                                    className="h-6 rounded bg-violet-100 px-1.5 text-[10px] font-medium text-violet-700 hover:bg-violet-200"
+                                                                    onClick={() => {
+                                                                        const targetAmount = m.actualCost || m.estimatedCost || 0;
+                                                                        const telebirrRef = prompt(`Enter Telebirr reference number:\nAmount to pay: ${targetAmount.toLocaleString()} ETB`);
+                                                                        if (telebirrRef) {
+                                                                            const telebirrAmount = prompt(`Confirm Telebirr payment amount:`);
+                                                                            if (telebirrAmount && Number(telebirrAmount) >= targetAmount) {
+                                                                                handleUpdateMaintenance(m.id, { status: "PAID", telebirrRef, telebirrAmount: Number(telebirrAmount), paymentTxRef: telebirrRef });
+                                                                            } else if (telebirrAmount) {
+                                                                                alert(`Amount must be at least ${targetAmount.toLocaleString()} ETB`);
+                                                                            }
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    Pay via Telebirr
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                        {m.status === "PAID" && !(m as any).driverAcceptedAt && isAdmin && (
+                                                            <div className="text-[10px] text-green-600 mt-1">
+                                                                Paid via Telebirr: {(m as any).telebirrRef || m.paymentTxRef || "—"}
+                                                                {(m as any).telebirrAmount != null && ` (${(m as any).telebirrAmount.toLocaleString()} ETB)`}
+                                                            </div>
+                                                        )}
+                                                        {m.status === "DRIVER_ACCEPTED" && isAdmin && (
+                                                            <button
+                                                                className="h-6 rounded bg-cyan-100 px-1.5 text-[10px] font-medium text-cyan-700 hover:bg-cyan-200 mt-1"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "COMPLETED", adminConfirmedAt: new Date().toISOString() })}
+                                                            >
+                                                                Confirm Handover
+                                                            </button>
+                                                        )}
+                                                        {m.status === "BUS_READY" && isAdmin && (
+                                                            <button
+                                                                className="h-6 rounded bg-blue-100 px-1.5 text-[10px] font-medium text-blue-700 hover:bg-blue-200 mt-1"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { driverAcceptedAt: new Date().toISOString(), status: "DRIVER_ACCEPTED" })}
+                                                            >
+                                                                Driver Accepted
+                                                            </button>
+                                                        )}
                                                         <select
                                                             className="h-7 rounded border px-1 text-xs"
                                                             value={bus?.status || ""}
@@ -863,9 +1005,19 @@ export default function GarageManagement() {
                                                         })
                                                     }
                                                 >
+                                                    <option value="REQUESTED">Requested</option>
+                                                    <option value="ACCEPTED">Accepted</option>
+                                                    <option value="NOT_FIXABLE">Not Fixable</option>
+                                                    <option value="COST_PENDING">Cost Pending</option>
+                                                    <option value="COST_APPROVED">Cost Approved</option>
                                                     <option value="SCHEDULED">Scheduled</option>
                                                     <option value="IN_PROGRESS">In Progress</option>
                                                     <option value="PARTS_ORDERED">Parts Ordered</option>
+                                                    <option value="REPAIR_DONE">Repair Done</option>
+                                                    <option value="AWAITING_PAYMENT">Awaiting Payment</option>
+                                                    <option value="PAID">Paid</option>
+                                                    <option value="BUS_READY">Bus Ready</option>
+                                                    <option value="DRIVER_ACCEPTED">Driver Accepted</option>
                                                     <option value="COMPLETED">Completed</option>
                                                     <option value="CANCELLED">Cancelled</option>
                                                 </select>

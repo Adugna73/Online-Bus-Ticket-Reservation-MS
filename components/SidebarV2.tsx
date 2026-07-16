@@ -36,8 +36,9 @@ type MenuItem = {
     href: string;
     icon: React.ComponentType<{ className?: string }>;
     roles?: Array<
-        "admin" | "staff" | "passenger" | "manager" | "supervisor" | "mechanic"
+        "admin" | "staff" | "passenger" | "manager" | "supervisor" | "mechanic" | "garage_owner" | "driver"
     >;
+    badge?: number;
 };
 
 function mapRolePath(roleKey: string) {
@@ -45,6 +46,8 @@ function mapRolePath(roleKey: string) {
     if (roleKey === "staff") return "supervisor";
     if (roleKey === "passenger") return "passenger";
     if (roleKey === "mechanic") return "mechanic";
+    if (roleKey === "garage_owner") return "garage-owner";
+    if (roleKey === "driver") return "driver";
     return roleKey || "passenger";
 }
 
@@ -60,7 +63,38 @@ export default function SidebarV2({
     const { data: session } = useSession();
     const path = usePathname();
     const [collapsed, setCollapsed] = useState(false);
+    const [notifications, setNotifications] = useState<Record<string, number>>({});
     const { t } = useI18n();
+
+    useEffect(() => {
+        const role = String((session?.user as any)?.role || "").toLowerCase();
+        const isStaff = role === "admin" || role === "supervisor" || role === "staff";
+
+        const fetchNotifications = () => {
+            if (isStaff) {
+                fetch("/api/vehicle-maintenance", { credentials: "include" })
+                    .then((r) => r.json())
+                    .then((data: any[]) => {
+                        const costPending = data.filter((m: any) => m.status === "COST_PENDING").length;
+                        const awaitingPayment = data.filter((m: any) => m.status === "AWAITING_PAYMENT" || m.status === "COMPLETED").length;
+                        setNotifications({ costPending, awaitingPayment });
+                    })
+                    .catch(() => {});
+            } else if (role === "garage_owner") {
+                fetch("/api/vehicle-maintenance", { credentials: "include" })
+                    .then((r) => r.json())
+                    .then((data: any[]) => {
+                        const requested = data.filter((m: any) => m.status === "REQUESTED").length;
+                        setNotifications({ requested });
+                    })
+                    .catch(() => {});
+            }
+        };
+
+        fetchNotifications();
+        const interval = setInterval(fetchNotifications, 30000);
+        return () => clearInterval(interval);
+    }, [session]);
 
     const roleKey = String((session?.user as any)?.role || "").toLowerCase();
     if (roleKey === "no-access") return null;
@@ -93,10 +127,48 @@ export default function SidebarV2({
             roles: ["admin", "staff", "manager", "supervisor"],
         },
         {
+            titleKey: "nav.garageDashboard",
+            href: "/garage-owner/dashboard",
+            icon: Wrench,
+            roles: ["garage_owner"],
+        },
+        {
+            titleKey: "nav.mechanics",
+            href: "/garage-owner/mechanics",
+            icon: Users,
+            roles: ["garage_owner"],
+        },
+        {
+            titleKey: "nav.maintenanceRequests",
+            href: "/garage-owner/maintenance",
+            icon: Clipboard,
+            roles: ["garage_owner"],
+            badge: notifications.requested || 0,
+        },
+        {
+            titleKey: "nav.myTasks",
+            href: "/mechanic/tasks",
+            icon: Wrench,
+            roles: ["mechanic"],
+        },
+        {
+            titleKey: "nav.myBus",
+            href: "/driver/bus",
+            icon: Compass,
+            roles: ["driver"],
+        },
+        {
+            titleKey: "nav.dashboard",
+            href: "/driver",
+            icon: Home,
+            roles: ["driver"],
+        },
+        {
             titleKey: "nav.maintenance",
             href: `/${rolePath}/maintenance`,
             icon: Wrench,
-            roles: ["admin", "staff", "manager", "supervisor", "mechanic"],
+            roles: ["admin", "staff", "manager", "supervisor"],
+            badge: (notifications.costPending || 0) + (notifications.awaitingPayment || 0),
         },
         {
             titleKey: "nav.bookNow",
@@ -108,14 +180,15 @@ export default function SidebarV2({
         },
         {
             titleKey: "nav.myBookings",
-            labelKeyOverride:
-                roleKey === "passenger" ? undefined : "nav.bookings",
-            href:
-                roleKey === "passenger"
-                    ? "/passenger/bookings"
-                    : `/${rolePath}/bookings`,
+            href: "/passenger/bookings/history",
             icon: Clipboard,
-            roles: ["admin", "staff", "manager", "supervisor", "passenger"],
+            roles: ["passenger"],
+        },
+        {
+            titleKey: "nav.bookings",
+            href: `/${rolePath}/bookings`,
+            icon: Clipboard,
+            roles: ["admin", "staff", "manager", "supervisor"],
         },
         {
             titleKey: "nav.payments",
@@ -268,10 +341,20 @@ export default function SidebarV2({
                                             : "hover:bg-muted/10"
                                     }`}
                                 >
-                                    <Icon className="h-4 w-4" />
+                                    <div className="relative">
+                                        <Icon className="h-4 w-4" />
+                                        {collapsed && item.badge != null && item.badge > 0 && (
+                                            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500" />
+                                        )}
+                                    </div>
                                     {!collapsed && (
-                                        <span className="sidebar-label">
+                                        <span className="sidebar-label flex items-center gap-2">
                                             {t(item.labelKeyOverride || item.titleKey)}
+                                            {item.badge != null && item.badge > 0 && (
+                                                <span className="inline-flex items-center justify-center h-5 min-w-[20px] rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                                                    {item.badge}
+                                                </span>
+                                                          )}
                                         </span>
                                     )}
                                 </Link>

@@ -1,0 +1,47 @@
+# Multi-stage Dockerfile for production (Next.js + Prisma)
+
+# Stage: builder
+FROM node:20-bullseye-slim AS builder
+WORKDIR /app
+
+# Accept optional npm registry for flaky networks
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ENV NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+
+# Install system deps needed for native modules/builds
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl build-essential python3 git \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copy manifests and install including dev deps for build
+COPY package*.json ./
+RUN npm ci --include=dev --legacy-peer-deps
+
+# Copy source and generate prisma client + build
+COPY . .
+RUN if [ -d prisma ]; then npx prisma generate; fi
+RUN npm run build
+
+# Prepare production node_modules
+RUN npm prune --omit=dev
+
+# Stage: runtime
+FROM node:20-bullseye-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Copy prod deps + build output
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/prisma ./prisma
+
+# Create non-root user and run as non-root
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+USER nextjs
+
+EXPOSE 3000
+
+# Start app
+CMD ["npm", "start"]

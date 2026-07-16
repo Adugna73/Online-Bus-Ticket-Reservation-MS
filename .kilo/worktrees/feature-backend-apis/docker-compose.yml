@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    container_name: online-bus-app
+    ports:
+      - "3030:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/online-bus-db?schema=public
+      NEXTAUTH_URL: http:localhost:3000
+    depends_on:
+      - db
+    restart: unless-stopped
+  db:
+    image: postgres:15
+    container_name: online-bus-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: online_bus_ticket_reservation_ms
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+volumes:
+  pgdata:

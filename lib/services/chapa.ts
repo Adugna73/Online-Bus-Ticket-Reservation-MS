@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import axios from "axios";
 import { Chapa } from "chapa-nodejs";
 import { prisma } from "@/lib/prisma";
 import {
@@ -57,8 +58,60 @@ export type ChapaInitResult = {
   tx_ref: string;
 };
 
-// Initialize a Chapa transaction via the SDK. Returns the hosted checkout URL
-// the user must be redirected to (they pick Telebirr etc. and approve there).
+// Chapa returns a human-readable rate-limit message like
+// "Please try again in 27 seconds". Parse the delay (seconds) so callers can
+// surface a Retry-After hint instead of a generic 500.
+export function parseRetrySeconds(msg: unknown): number | null {
+  if (typeof msg !== "string") return null;
+  const m = msg.match(/try again in\s+(\d+)\s+seconds/i);
+  return m ? Number(m[1]) : null;
+}
+
+export class ChapaRateLimitError extends Error {
+  retryAfter: number | null;
+  constructor(message: string, retryAfter: number | null) {
+    super(message);
+    this.name = "ChapaRateLimitError";
+    this.retryAfter = retryAfter;
+  }
+}
+
+// Chapa's hosted-checkout init endpoint. We call it directly via axios instead
+// of the SDK's `initialize()` because the SDK's withErrorHandling() discards
+// `error.response.data` and stringifies structured messages to "[object Object]",
+// hiding the real validation error (e.g. { email: ["validation.email"] }).
+const CHAPA_BASE_URL =
+  process.env.CHAPA_BASE_URL?.replace(/\/+$/, "") || "https://api.chapa.co/v1";
+
+// Flatten Chapa's structured error message (which can be a string or an object
+// like { email: ["validation.email"] }) into a readable string.
+export function flattenChapaMessage(msg: unknown): string {
+  if (msg == null) return "";
+  if (typeof msg === "string") return msg;
+  if (typeof msg === "object") {
+    const parts: string[] = [];
+    for (const [field, val] of Object.entries(msg as Record<string, unknown>)) {
+      const v = Array.isArray(val) ? val.join(", ") : String(val);
+      parts.push(`${field}: ${v}`);
+    }
+    return parts.join("; ");
+  }
+  return String(msg);
+}
+
+export class ChapaApiError extends Error {
+  status: number;
+  details: unknown;
+  constructor(message: string, status: number, details: unknown) {
+    super(message);
+    this.name = "ChapaApiError";
+    this.status = status;
+    this.details = details;
+  }
+}
+
+// Initialize a Chapa transaction. Returns the hosted checkout URL the user
+// must be redirected to (they pick Telebirr etc. and approve there).
 export async function initialize(
   input: ChapaInitInput,
 ): Promise<ChapaInitResult> {
@@ -66,34 +119,49 @@ export async function initialize(
     throw new Error("chapa_not_configured");
   }
   const amount = testAmount(input.amount);
-  try {
-    const response = await getChapa().initialize({
-      first_name: input.first_name,
-      last_name: input.last_name || "Customer",
-      email: input.email,
-      phone_number: input.phone || undefined,
-      currency: "ETB",
-      amount: String(amount),
-      tx_ref: input.tx_ref,
-      callback_url: input.callback_url || input.return_url,
-      return_url: input.return_url,
-      customization: {
-        title: (input.title || "Bus Ticket").slice(0, 16),
-        description: (input.description || "Pay for your bus booking")
-          .replace(/[^a-zA-Z0-9 _.\-]/g, "")
-          .slice(0, 100),
-      },
-    } as any);
+  const payload = {
+    first_name: input.first_name,
+    last_name: input.last_name || "Customer",
+    email: input.email,
+    phone_number: input.phone || undefined,
+    currency: "ETB",
+    amount: String(amount),
+    tx_ref: input.tx_ref,
+    callback_url: input.callback_url || input.return_url,
+    return_url: input.return_url,
+    customization: {
+      title: (input.title || "Bus Ticket").slice(0, 16),
+      description: (input.description || "Pay for your bus booking")
+        .replace(/[^a-zA-Z0-9 _.\-]/g, "")
+        .slice(0, 100),
+    },
+  };
 
-    const checkout_url = (response as any)?.data?.checkout_url;
-    if (response.status !== "success" || !checkout_url) {
-      const msg = (response as any)?.message;
-      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  try {
+    const res = await axios.post(`${CHAPA_BASE_URL}/transaction/initialize`, payload, {
+      headers: { Authorization: `Bearer ${CHAPA_SECRET_KEY}` },
+    });
+    const body = res.data;
+    const checkout_url = body?.data?.checkout_url;
+    if (body?.status !== "success" || !checkout_url) {
+      const msg = flattenChapaMessage(body?.message) || "chapa_init_failed";
+      throw new ChapaApiError(msg, res.status, body);
     }
     return { checkout_url, tx_ref: input.tx_ref };
   } catch (error: any) {
-    const msg = error?.response?.data?.message ?? error?.message;
-    throw new Error(typeof msg === "string" ? msg : "chapa_init_failed");
+    // Re-throw our own typed errors unchanged.
+    if (error instanceof ChapaApiError) throw error;
+    if (error instanceof ChapaRateLimitError) throw error;
+
+    const data = error?.response?.data;
+    const status = error?.response?.status ?? 500;
+    const rawMsg = data?.message ?? error?.message;
+    const text = flattenChapaMessage(rawMsg) || "chapa_init_failed";
+    const retryAfter = parseRetrySeconds(text);
+    if (retryAfter != null || /try again in/i.test(text)) {
+      throw new ChapaRateLimitError(text, retryAfter);
+    }
+    throw new ChapaApiError(text, status, data ?? error);
   }
 }
 

@@ -153,7 +153,12 @@ export default function SeatMapPage() {
         return () => clearInterval(interval);
     }, [loading, error, seatMap, loadSeatMap]);
 
-    const seats = seatMap?.seats || [];
+    const seats = (seatMap?.seats || []).slice().sort((a, b) => {
+        const na = parseInt(a.seatNumber, 10);
+        const nb = parseInt(b.seatNumber, 10);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a.seatNumber.localeCompare(b.seatNumber);
+    });
 
     const selectableSeats = useMemo(
         () => seats.filter((s) => s.isActive && s.status === "available"),
@@ -174,10 +179,12 @@ export default function SeatMapPage() {
     const toggleSeat = (seat: SeatRow) => {
         if (!seat.isActive || seat.status !== "available") return;
         setSelected((prev) => {
-            const next = new Set(prev);
-            if (next.has(seat.id)) next.delete(seat.id);
-            else next.add(seat.id);
-            return next;
+            if (prev.has(seat.id)) {
+                const next = new Set(prev);
+                next.delete(seat.id);
+                return next;
+            }
+            return new Set([seat.id]);
         });
     };
 
@@ -365,7 +372,9 @@ export default function SeatMapPage() {
                 throw new Error(
                     data?.error === "chapa_not_configured"
                         ? "Chapa is not configured. Set CHAPA_SECRET_KEY in .env."
-                        : data?.error || "Could not start payment.",
+                        : data?.error === "rate_limited"
+                          ? `Too many payment attempts. Please wait ${data?.retry_after ?? 30}s and try again.`
+                          : data?.error || "Could not start payment.",
                 );
             }
             toast({
@@ -409,7 +418,7 @@ export default function SeatMapPage() {
                             {isStaff ? "Book seats for passenger" : "Choose your seats"}
                         </h2>
                         <p className="text-xs text-muted-foreground">
-                            Live seat map with 10-minute holds.
+                            Live seat map with 15-minute holds. Select one seat at a time.
                         </p>
                     </div>
                     <div className="flex items-center gap-2">

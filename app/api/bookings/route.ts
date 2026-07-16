@@ -259,14 +259,24 @@ export async function POST(req: Request) {
             } else {
                 const passengerEmail = String(body?.passengerEmail || "").trim();
                 const passengerPhone = String(body?.passengerPhone || "").trim();
-                const existing = await prisma.user.findFirst({
-                    where: {
-                        OR: [
-                            passengerEmail ? { email: passengerEmail } : undefined,
-                            passengerPhone ? { phone: passengerPhone } : undefined,
-                        ].filter(Boolean) as any,
-                    },
-                });
+                // Only look up an existing PASSENGER account by email/phone.
+                // Never attach to an admin/staff account (e.g. when the typed
+                // phone happens to match an staff member's phone). Skip the
+                // lookup entirely when neither is provided (an empty OR would
+                // otherwise match every user).
+                let existing: { id: string } | null = null;
+                if (passengerEmail || passengerPhone) {
+                    existing = await prisma.user.findFirst({
+                        where: {
+                            role: "PASSENGER",
+                            OR: [
+                                passengerEmail ? { email: passengerEmail } : undefined,
+                                passengerPhone ? { phone: passengerPhone } : undefined,
+                            ].filter(Boolean) as any,
+                        },
+                        select: { id: true },
+                    });
+                }
                 if (existing) {
                     bookingUserId = existing.id;
                 } else {

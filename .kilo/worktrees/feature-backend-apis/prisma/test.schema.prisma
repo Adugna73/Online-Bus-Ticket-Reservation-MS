@@ -1,0 +1,68 @@
+// // generator client {
+// //   provider = "prisma-client-js"
+// // }
+
+// // datasource db {
+// //   provider = "sqlite"
+// //   url      = env("DATABASE_URL")
+// // }
+
+// // NOTE: This test schema is derived from main schema.prisma but uses sqlite for local tests.
+// // Keep it minimal or sync with your main schema when needed. For convenience, it's a copy of the
+// // project's schema but with sqlite datasource.
+
+// // (Below copy essential models used by tests: Role, User, Region, Site, WorkOrder, WorkOrderAttachment, Checklist)
+
+// model Role {
+// 	id          String @id @default(uuid())
+// 	key         String @unique
+// 	displayName String
+// 	users       User[]
+// }
+
+// model User {
+// 	id         String   @id @default(uuid())
+// 	username   String   @unique
+// 	email      String?  @unique
+// 	fullName   String
+// 	roleId     String
+// 	role       Role     @relation(fields: [roleId], references: [id])
+// 	createdAt  DateTime @default(now())
+// }
+
+// model Region {
+// 	id             String @id @default(uuid())
+// 	name           String
+// 	organizationId String
+// }
+
+// model Site {
+// 	id       String @id @default(uuid())
+// 	siteCode String @unique
+// 	name     String
+// 	regionId String
+// }
+
+// model WorkOrder {
+// 	id             String @id @default(uuid())
+// 	title          String
+// 	siteId         String
+// 	type           String
+// 	createdById    String?
+// 	checklistScope String @default("full")
+// }
+
+// model WorkOrderAttachment {
+// 	id          String   @id @default(uuid())
+// 	workOrderId String
+// 	fileName    String
+// 	fileUrl     String
+// 	createdAt   DateTime @default(now())
+// }
+
+// model Checklist {
+// 	id            String @id @default(uuid())
+// 	workOrderId   String @unique
+// 	items         Json
+// 	completedById String?
+// }

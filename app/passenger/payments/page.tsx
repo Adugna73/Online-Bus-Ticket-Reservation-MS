@@ -248,7 +248,9 @@ export default function PaymentsPage() {
           throw new Error(
             data?.error === "chapa_not_configured"
               ? "Chapa is not configured. Set CHAPA_SECRET_KEY in .env."
-              : data?.error || "Could not start payment.",
+              : data?.error === "rate_limited"
+                ? `Too many payment attempts. Please wait ${data?.retry_after ?? 30}s and try again.`
+                : data?.error || "Could not start payment.",
           );
         }
         toast({

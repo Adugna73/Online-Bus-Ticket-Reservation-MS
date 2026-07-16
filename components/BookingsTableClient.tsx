@@ -178,8 +178,8 @@ export default function BookingsTableClient() {
                             {bookings.map((b) => {
                                 const isExpanded = expandedId === b.id;
                                 const passengerName =
-                                    b.passenger?.name ||
                                     b.passengerInfo?.fullName ||
+                                    b.passenger?.name ||
                                     b.passenger?.email ||
                                     "—";
                                 const routeStr = `${b.trip?.route?.origin?.name || "—"} → ${b.trip?.route?.destination?.name || "—"}`;
@@ -190,10 +190,12 @@ export default function BookingsTableClient() {
                                         .join(", ") || "—";
                                 const paymentStatus = b.payment?.status || "PENDING";
                                 const paymentMethod = b.payment?.method || "—";
+                                // Admin/staff can approve any PENDING booking as
+                                // cash received — even if payment is already PAID
+                                // (e.g. booking was created paid but not yet
+                                // confirmed). Approving sets booking -> CONFIRMED.
                                 const canApprove =
-                                    isStaff &&
-                                    paymentStatus === "PENDING" &&
-                                    (paymentMethod === "CASH" || paymentMethod === "—");
+                                    isStaff && b.status === "PENDING";
 
                                 return (
                                     <Fragment key={b.id}>
@@ -259,7 +261,7 @@ export default function BookingsTableClient() {
                                                             className="inline-flex items-center gap-1 rounded border border-green-300 bg-green-50 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
                                                         >
                                                             <CheckCircle className="h-3 w-3" />
-                                                            {approvingId === b.id ? "Approving..." : "Approve Cash"}
+                                                            {approvingId === b.id ? "Approving..." : paymentStatus === "PAID" ? "Confirm" : "Approve Cash"}
                                                         </button>
                                                     ) : paymentStatus === "PAID" ? (
                                                         <span className="inline-flex items-center gap-1 text-xs text-green-600">
@@ -405,7 +407,7 @@ export default function BookingsTableClient() {
                                                                     className="mt-3 w-full inline-flex items-center justify-center gap-1 rounded border border-green-300 bg-green-50 px-2 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
                                                                 >
                                                                     <CheckCircle className="h-3 w-3" />
-                                                                    {approvingId === b.id ? "Approving..." : "Approve Cash Payment"}
+                                                                    {approvingId === b.id ? "Approving..." : paymentStatus === "PAID" ? "Confirm Booking" : "Approve Cash Payment"}
                                                                 </button>
                                                             )}
                                                         </div>

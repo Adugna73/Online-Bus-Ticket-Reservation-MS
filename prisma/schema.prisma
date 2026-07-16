@@ -12,6 +12,8 @@ enum UserRole {
   STAFF
   ADMIN
   MECHANIC
+  GARAGE_OWNER
+  DRIVER
 }
 
 enum SeatType {
@@ -73,6 +75,10 @@ model User {
   bookings     Booking[]
   paymentProofs BookingPaymentProof[]
   customerServiceAssignments CustomerServiceAssignment[]
+  ownedGarages          Garage[]
+  requestedMaintenances VehicleMaintenance[] @relation("RequestedBy")
+  driverMaintenances    VehicleMaintenance[] @relation("MaintenanceDriver")
+  drivenBuses           Bus[] @relation("BusDriver")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -111,6 +117,8 @@ model Bus {
   audioAnnouncements    Boolean @default(false)
   garageId    String?
   garage      Garage?  @relation(fields: [garageId], references: [id])
+  driverId    String?
+  driver      User?    @relation("BusDriver", fields: [driverId], references: [id])
   seats       Seat[]
   trips       Trip[]
   maintenances VehicleMaintenance[]
@@ -637,45 +645,90 @@ model Garage {
   contactPhone String?
   contactEmail String?
   managerName  String?
+  ownerId      String?
+  owner        User?                 @relation(fields: [ownerId], references: [id])
   buses        Bus[]
   maintenances VehicleMaintenance[]
+  mechanics    Mechanic[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@index([city])
+  @@index([ownerId])
+}
+
+model Mechanic {
+  id           String   @id @default(uuid())
+  name         String
+  phone        String?
+  email        String?
+  position     String
+  garageId     String
+  garage       Garage                @relation(fields: [garageId], references: [id])
+  maintenances VehicleMaintenance[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([garageId])
 }
 
 enum VehicleMaintenanceStatus {
+  REQUESTED
+  ACCEPTED
+  NOT_FIXABLE
+  COST_PENDING
+  COST_APPROVED
   SCHEDULED
   IN_PROGRESS
   PARTS_ORDERED
+  REPAIR_DONE
+  AWAITING_PAYMENT
+  PAID
+  BUS_READY
+  DRIVER_ACCEPTED
   COMPLETED
   CANCELLED
 }
 
 model VehicleMaintenance {
-  id                   String                 @id @default(uuid())
-  busId                String
-  garageId             String
-  status               VehicleMaintenanceStatus @default(SCHEDULED)
+  id                      String                   @id @default(uuid())
+  busId                   String
+  garageId                String
+  status                  VehicleMaintenanceStatus @default(REQUESTED)
   partsNeedingMaintenance String?
-  description          String?
-  mechanicNotes        String?
-  scheduledDate        DateTime?
-  completedDate        DateTime?
-  ownerPickupDate      DateTime?
-  ownerDropoffDate     DateTime?
-  estimatedCost        Float?
-  actualCost           Float?
-  updatedBy            String?
-  bus                  Bus                    @relation(fields: [busId], references: [id])
-  garage               Garage                 @relation(fields: [garageId], references: [id])
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
+  description             String?
+  mechanicNotes           String?
+  scheduledDate           DateTime?
+  completedDate           DateTime?
+  ownerPickupDate         DateTime?
+  ownerDropoffDate        DateTime?
+  estimatedCost           Float?
+  actualCost              Float?
+  requestedById           String?
+  assignedMechanicId      String?
+  acceptedAt              DateTime?
+  rejectionReason         String?
+  costRejectedReason      String?
+  paymentTxRef            String?
+  telebirrRef             String?
+  telebirrAmount          Float?
+  driverAcceptedAt        DateTime?
+  busReleasedAt           DateTime?
+  adminConfirmedAt        DateTime?
+  driverId                String?
+  driver                  User?                    @relation("MaintenanceDriver", fields: [driverId], references: [id])
+  updatedBy               String?
+  bus                     Bus                      @relation(fields: [busId], references: [id])
+  garage                  Garage                   @relation(fields: [garageId], references: [id])
+  requestedBy             User?                    @relation("RequestedBy", fields: [requestedById], references: [id])
+  assignedMechanic        Mechanic?                @relation(fields: [assignedMechanicId], references: [id])
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 
   @@index([busId])
   @@index([garageId])
   @@index([status])
+  @@index([assignedMechanicId])
 }
 
 // ============================================================================

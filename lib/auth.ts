@@ -14,6 +14,8 @@ const normalizeRole = (role?: string | null) => {
   if (rk === 'passenger') return 'passenger';
   if (rk === 'admin') return 'admin';
   if (rk === 'mechanic') return 'mechanic';
+  if (rk === 'garage_owner') return 'garage_owner';
+  if (rk === 'driver') return 'driver';
   return rk;
 };
 
@@ -88,8 +90,8 @@ export const authOptions: NextAuthOptions = {
   ],
   session: {
     strategy: 'jwt',
-    maxAge: 5 * 60,
-    updateAge: 60,
+    maxAge: 24 * 60 * 60,
+    updateAge: 5 * 60,
   },
   callbacks: {
     async signIn({ user, account, profile, email, credentials }) {

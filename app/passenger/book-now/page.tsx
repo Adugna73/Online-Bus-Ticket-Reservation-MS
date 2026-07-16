@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -10,8 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
     Card,
-    CardHeader,
-    CardTitle,
     CardContent,
 } from "@/components/ui/card";
 
@@ -29,6 +28,7 @@ type TripCard = {
         plateNumber: string;
         model?: string | null;
         seatCount: number;
+        imageUrl?: string | null;
     } | null;
     bookedSeats: number;
     availableSeats: number;
@@ -66,7 +66,7 @@ export default function BookNowPage() {
         (async () => {
             try {
                 setLoading(true);
-                const res = await fetch("/api/trips");
+                const res = await fetch("/api/trips", { credentials: "include" });
                 if (!res.ok) {
                     const text = await res.text().catch(() => "");
                     throw new Error(text || "Failed to load trips.");
@@ -268,7 +268,12 @@ export default function BookNowPage() {
 
                 {!loading && !error && filtered.length > 0 && (
                     <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                        {filtered.map((trip) => {
+                        {filtered.map((trip, index) => {
+                            const imageSrc =
+                                trip.bus?.imageUrl ||
+                                (index % 2 === 0
+                                    ? "/images/bus-card-1.svg"
+                                    : "/images/bus-card-2.svg");
                             const origin = trip.route?.origin
                                 ? `${trip.route.origin.name} (${trip.route.origin.code})`
                                 : "-";
@@ -277,19 +282,41 @@ export default function BookNowPage() {
                                 : "-";
                             const available = trip.availableSeats;
                             return (
-                                <Card key={trip.id}>
-                                    <CardHeader>
-                                        <div className="flex items-center justify-between">
-                                            <CardTitle>
-                                                {origin} → {destination}
-                                            </CardTitle>
-                                            <span className="text-sm font-semibold text-emerald-600">
-                                                {trip.basePrice.toFixed(2)} ETB
-                                            </span>
+                                <div
+                                    key={trip.id}
+                                    className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+                                >
+                                    <div className="relative h-56 w-full bg-neutral-950">
+                                        <Image
+                                            src={imageSrc}
+                                            alt="Bus"
+                                            fill
+                                            className="object-contain"
+                                            loading={
+                                                index === 0 ? "eager" : "lazy"
+                                            }
+                                            priority={index === 0}
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                                        <div className="absolute bottom-3 left-3 flex items-center gap-2 text-white">
+                                            <Badge className="bg-white/20 text-white">
+                                                {trip.bus?.model || "Coach"}
+                                            </Badge>
+                                            <Badge className="bg-emerald-500/80 text-white">
+                                                {trip.bus?.plateNumber || "-"}
+                                            </Badge>
                                         </div>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    </div>
+                                    <div className="p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-sm font-semibold">
+                                                {origin} → {destination}
+                                            </div>
+                                            <div className="text-sm font-semibold text-emerald-600">
+                                                {trip.basePrice.toFixed(2)} ETB
+                                            </div>
+                                        </div>
+                                        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                                             <Timer className="h-3.5 w-3.5" />
                                             {formatDateTime(trip.departAt)}
                                         </div>
@@ -298,25 +325,20 @@ export default function BookNowPage() {
                                                 variant="outline"
                                                 className="text-[11px]"
                                             >
-                                                {available} seats left
+                                                Seats: {available} left
                                             </Badge>
                                             <Badge
                                                 variant="outline"
                                                 className="text-[11px]"
                                             >
-                                                {trip.bus?.model || "Coach"}
-                                            </Badge>
-                                            <Badge
-                                                variant="outline"
-                                                className="text-[11px]"
-                                            >
-                                                {trip.bus?.plateNumber || "-"}
+                                                Total:{" "}
+                                                {trip.bus?.seatCount || 0}
                                             </Badge>
                                         </div>
                                         <div className="mt-4 flex items-center justify-between">
-                                            <span className="text-xs text-muted-foreground">
+                                            <div className="text-xs text-muted-foreground">
                                                 {trip.status}
-                                            </span>
+                                            </div>
                                             <Button
                                                 size="sm"
                                                 disabled={available <= 0}
@@ -331,8 +353,8 @@ export default function BookNowPage() {
                                                     : "Sold Out"}
                                             </Button>
                                         </div>
-                                    </CardContent>
-                                </Card>
+                                    </div>
+                                </div>
                             );
                         })}
                     </div>

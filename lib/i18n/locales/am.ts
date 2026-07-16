@@ -38,7 +38,12 @@ export const am: Dict = {
     buses: "ባሶች",
     routes: "መንገዶች",
     reports: "ሪፖርቶች",
-    users: "ተጠቀሚዎች",
+    users: "ተጠቃሚዎች",
+    garageDashboard: "የጋራዥ ዳሽቦርድ",
+    mechanics: "መካኒኮች",
+    maintenanceRequests: "ጥያቄዎች",
+    myTasks: "የእኔ ተግባራት",
+    myBus: "የእኔ አውቶብስ",
   },
   auth: {
     welcome: "እንኳን ደህና መጡ",

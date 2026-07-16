@@ -16,43 +16,30 @@ export default function DashboardRedirectPage() {
             return;
         }
         const roleKey = String((session.user as any)?.role || "").toLowerCase();
-        const seeded = Boolean((session.user as any)?.seeded);
 
-        // Only allow known roles to be redirected. Treat missing/unknown role as
-        // no-access so seeded staff aren't defaulted to 'passenger'.
-        if (
-            !roleKey ||
-            ![
-                "admin",
-                "staff",
-                "passenger",
-                "manager",
-                "supervisor",
-                "passenger",
-            ].includes(roleKey)
-        ) {
+        const redirectPath =
+            roleKey === "admin"
+                ? "/admin/dashboard"
+                : roleKey === "staff" || roleKey === "supervisor"
+                  ? "/supervisor/dashboard"
+                  : roleKey === "manager"
+                    ? "/manager/managerial-dashboard"
+                    : roleKey === "mechanic"
+                      ? "/mechanic/tasks"
+                      : roleKey === "garage_owner"
+                        ? "/garage-owner/dashboard"
+                        : roleKey === "driver"
+                          ? "/driver/bus"
+                          : roleKey === "passenger"
+                            ? "/passenger/bookings"
+                            : null;
+
+        if (!redirectPath) {
             router.replace("/no-access");
             return;
         }
 
-        const rolePath =
-            roleKey === "admin"
-                ? "admin"
-                : roleKey === "staff"
-                  ? "supervisor"
-                  : roleKey === "passenger"
-                    ? "passenger"
-                    : roleKey === "manager"
-                      ? "manager"
-                      : roleKey === "supervisor"
-                        ? "supervisor"
-                        : "passenger";
-
-        if (rolePath === "manager") {
-            router.replace(`/${rolePath}/managerial-dashboard`);
-        } else {
-            router.replace(`/${rolePath}/dashboard`);
-        }
+        router.replace(redirectPath);
     }, [session, status, router]);
 
     return (

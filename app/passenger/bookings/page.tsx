@@ -57,7 +57,7 @@ export default function PassengerMarketplacePage() {
         (async () => {
             try {
                 setLoading(true);
-                const res = await fetch("/api/trips");
+                const res = await fetch("/api/trips", { credentials: "include" });
                 if (!res.ok) {
                     const text = await res.text().catch(() => "");
                     throw new Error(text || "Failed to load trips.");
@@ -113,7 +113,7 @@ export default function PassengerMarketplacePage() {
                     </div>
                     <div className="flex items-center gap-2">
                         <Button asChild variant="outline" size="sm">
-                            <Link href="/passenger/bookings/history">
+                            <Link href="/passenger/book-now">
                                 My Bookings
                             </Link>
                         </Button>

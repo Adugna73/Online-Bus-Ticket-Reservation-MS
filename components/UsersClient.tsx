@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Trash2, UserPlus, X } from "lucide-react";
+import { Trash2, UserPlus, X, Wrench, Users } from "lucide-react";
 
 type User = {
     id: string;
@@ -13,24 +13,35 @@ type User = {
     createdAt: string;
 };
 
+type GarageInfo = {
+    id: string;
+    name: string;
+    city: string | null;
+    owner: { id: string; fullName: string; email: string } | null;
+    mechanics: { id: string; name: string; position: string; phone: string | null }[];
+};
+
 const ROLE_LABELS: Record<string, string> = {
     ADMIN: "Admin",
     STAFF: "Staff",
-    MECHANIC: "Mechanic",
+    GARAGE_OWNER: "Garage Owner",
+    DRIVER: "Driver",
     PASSENGER: "Passenger",
 };
 
 const ROLE_COLORS: Record<string, string> = {
     ADMIN: "bg-purple-100 text-purple-700 border-purple-300",
     STAFF: "bg-blue-100 text-blue-700 border-blue-300",
-    MECHANIC: "bg-amber-100 text-amber-700 border-amber-300",
+    GARAGE_OWNER: "bg-amber-100 text-amber-700 border-amber-300",
+    DRIVER: "bg-sky-100 text-sky-700 border-sky-300",
     PASSENGER: "bg-gray-100 text-gray-700 border-gray-300",
 };
 
 const ROLE_OPTIONS = [
     { value: "PASSENGER", label: "Passenger" },
+    { value: "DRIVER", label: "Driver" },
     { value: "STAFF", label: "Staff" },
-    { value: "MECHANIC", label: "Mechanic" },
+    { value: "GARAGE_OWNER", label: "Garage Owner" },
     { value: "ADMIN", label: "Admin" },
 ];
 
@@ -49,6 +60,7 @@ export default function UsersClient() {
     const isAdmin = role === "admin";
 
     const [users, setUsers] = useState<User[]>([]);
+    const [garages, setGarages] = useState<GarageInfo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
@@ -60,6 +72,7 @@ export default function UsersClient() {
         phone: "",
         roleKey: "STAFF",
         password: "",
+        garageId: "",
     });
     const [creating, setCreating] = useState(false);
     const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -76,8 +89,29 @@ export default function UsersClient() {
         }
     };
 
+    const loadGarages = async () => {
+        try {
+            const res = await fetch("/api/garages");
+            if (!res.ok) return;
+            const data = await res.json();
+            const enriched = await Promise.all(
+                (data || []).map(async (g: any) => {
+                    try {
+                        const mRes = await fetch(`/api/mechanics?garageId=${g.id}`);
+                        const mechanics = mRes.ok ? await mRes.json() : [];
+                        return { ...g, mechanics };
+                    } catch {
+                        return { ...g, mechanics: [] };
+                    }
+                }),
+            );
+            setGarages(enriched);
+        } catch {}
+    };
+
     useEffect(() => {
         loadUsers();
+        loadGarages();
     }, []);
 
     const handleCreate = async () => {
@@ -102,10 +136,20 @@ export default function UsersClient() {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || "Failed to create user");
+
+            if (newUser.roleKey === "GARAGE_OWNER" && newUser.garageId) {
+                await fetch("/api/garages", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: newUser.garageId, ownerId: data.id || data.userId }),
+                });
+            }
+
             setSuccess(`User "${newUser.fullName}" created successfully`);
-            setNewUser({ fullName: "", email: "", phone: "", roleKey: "STAFF", password: "" });
+            setNewUser({ fullName: "", email: "", phone: "", roleKey: "STAFF", password: "", garageId: "" });
             setShowAddForm(false);
             await loadUsers();
+            await loadGarages();
         } catch (err: any) {
             setError(err?.message || "Failed to create user");
         } finally {
@@ -225,6 +269,25 @@ export default function UsersClient() {
                                         <option key={r.value} value={r.value}>{r.label}</option>
                                     ))}
                                 </select>
+                                {newUser.roleKey === "GARAGE_OWNER" && (
+                                    <select
+                                        className="h-10 w-full rounded border px-3 text-sm"
+                                        value={newUser.garageId}
+                                        onChange={(e) => setNewUser({ ...newUser, garageId: e.target.value })}
+                                    >
+                                        <option value="">No garage (assign later)</option>
+                                        {garages
+                                            .filter((g) => !g.owner)
+                                            .map((g) => (
+                                                <option key={g.id} value={g.id}>
+                                                    {g.name} {g.city ? `(${g.city})` : ""}
+                                                </option>
+                                            ))}
+                                        {garages.filter((g) => !g.owner).length === 0 && (
+                                            <option value="" disabled>All garages have owners — create one on Maintenance page</option>
+                                        )}
+                                    </select>
+                                )}
                                 <button
                                     onClick={handleCreate}
                                     disabled={creating}
@@ -316,6 +379,67 @@ export default function UsersClient() {
                     </tbody>
                 </table>
             </div>
+
+            {/* Garage Owners & Mechanics */}
+            {isAdmin && garages.length > 0 && (
+                <div className="space-y-4">
+                    <div className="flex items-center gap-2 mt-6">
+                        <Wrench className="h-4 w-4 text-muted-foreground" />
+                        <h2 className="text-sm font-semibold">Garage Owners & Mechanics</h2>
+                    </div>
+                    {garages.map((g) => (
+                        <div key={g.id} className="rounded-lg border bg-card">
+                            <div className="border-b bg-muted/30 px-4 py-3">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <span className="font-semibold">{g.name}</span>
+                                        <span className="ml-2 text-xs text-muted-foreground">
+                                            {g.city || "—"}
+                                        </span>
+                                    </div>
+                                    {g.owner && (
+                                        <span className="text-xs text-muted-foreground">
+                                            Owner: {g.owner.fullName} ({g.owner.email})
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="p-4">
+                                {g.mechanics.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">No mechanics registered yet.</p>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="text-left text-xs text-muted-foreground border-b">
+                                                    <th className="pb-2 font-medium">Name</th>
+                                                    <th className="pb-2 font-medium">Position</th>
+                                                    <th className="pb-2 font-medium">Phone</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {g.mechanics.map((m) => (
+                                                    <tr key={m.id} className="border-b last:border-0">
+                                                        <td className="py-2">{m.name}</td>
+                                                        <td className="py-2">
+                                                            <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                                                                {m.position}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-2 text-xs text-muted-foreground">
+                                                            {m.phone || "—"}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

@@ -35,6 +35,11 @@ export const en = {
     routes: "Routes",
     reports: "Reports",
     users: "Users",
+    garageDashboard: "Garage Dashboard",
+    mechanics: "Mechanics",
+    maintenanceRequests: "Requests",
+    myTasks: "My Tasks",
+    myBus: "My Bus",
   },
   auth: {
     welcome: "Welcome",

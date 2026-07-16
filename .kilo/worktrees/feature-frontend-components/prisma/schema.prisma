@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PASSENGER
+  STAFF
+  ADMIN
+}
+
+enum SeatType {
+  STANDARD
+  VIP
+}
+
+enum TripStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentMethod {
+  TELEBIRR
+  CBE_BIRR
+  M_BIRR
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Station {
+  id        String   @id @default(uuid())
+  name      String
+  city      String
+  code      String   @unique
+  address   String?
+  staff     User[]
+  routesFrom Route[] @relation("RouteOrigin")
+  routesTo   Route[] @relation("RouteDestination")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([city])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  fullName     String
+  email        String   @unique
+  phone        String?
+  passwordHash String
+  role         UserRole @default(PASSENGER)
+  stationId    String?
+  station      Station? @relation(fields: [stationId], references: [id])
+  bookings     Booking[]
+  paymentProofs BookingPaymentProof[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([role])
+}
+
+model BusCompany {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  contactEmail String?
+  contactPhone String?
+  buses        Bus[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Bus {
+  id          String   @id @default(uuid())
+  companyId   String
+  company     BusCompany @relation(fields: [companyId], references: [id])
+  plateNumber String   @unique
+  sideNumber  String?
+  model       String?
+  level       String?
+  driverName  String?
+  imageUrl    String?
+  amenities   Json?
+  safetyChecklist Json?
+  seatLayout  Json?
+  seatCount   Int
+  status      String   @default("active")
+  seats       Seat[]
+  trips       Trip[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+model Seat {
+  id          String   @id @default(uuid())
+  busId       String
+  bus         Bus      @relation(fields: [busId], references: [id])
+  seatNumber  String
+  seatType    SeatType @default(STANDARD)
+  isActive    Boolean  @default(true)
+  bookingSeats BookingSeat[]
+
+  @@unique([busId, seatNumber])
+}
+
+model Route {
+  id                    String   @id @default(uuid())
+  originStationId       String
+  destinationStationId  String
+  originStation         Station @relation("RouteOrigin", fields: [originStationId], references: [id])
+  destinationStation    Station @relation("RouteDestination", fields: [destinationStationId], references: [id])
+  distanceKm            Int?
+  defaultPrice          Float?
+  trips                 Trip[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([originStationId, destinationStationId])
+}
+
+model Trip {
+  id        String    @id @default(uuid())
+  routeId   String
+  busId     String
+  departAt  DateTime
+  arriveAt  DateTime
+  basePrice Float
+  status    TripStatus @default(SCHEDULED)
+  route     Route     @relation(fields: [routeId], references: [id])
+  bus       Bus       @relation(fields: [busId], references: [id])
+  bookings  Booking[]
+  bookingSeats BookingSeat[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([routeId])
+  @@index([busId])
+  @@index([departAt])
+}
+
+model Booking {
+  id         String        @id @default(uuid())
+  bookingRef String        @unique
+  userId     String
+  tripId     String
+  status     BookingStatus @default(PENDING)
+  totalPrice Float
+  passengerFullName String?
+  passengerPhone    String?
+  passengerEmail    String?
+  passengerIdNumber String?
+  passengerGender   String?
+  passengerAge      Int?
+  emergencyContact  String?
+  notes             String?
+  user       User          @relation(fields: [userId], references: [id])
+  trip       Trip          @relation(fields: [tripId], references: [id])
+  seats      BookingSeat[]
+  payment    Payment?
+  receipt    Receipt?
+  paymentProofs BookingPaymentProof[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tripId])
+}
+
+model BookingSeat {
+  id         String  @id @default(uuid())
+  bookingId  String
+  tripId     String
+  seatId     String
+  fare       Float
+  booking    Booking @relation(fields: [bookingId], references: [id])
+  trip       Trip    @relation(fields: [tripId], references: [id])
+  seat       Seat    @relation(fields: [seatId], references: [id])
+
+  @@unique([tripId, seatId])
+  @@index([bookingId])
+  @@index([seatId])
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  bookingId      String        @unique
+  method         PaymentMethod
+  status         PaymentStatus @default(PENDING)
+  amount         Float
+  transactionRef String?
+  paidAt         DateTime?
+  booking        Booking       @relation(fields: [bookingId], references: [id])
+  createdAt      DateTime      @default(now())
+}
+
+model Receipt {
+  id            String   @id @default(uuid())
+  bookingId     String   @unique
+  receiptNumber String   @unique
+  pdfUrl        String?
+  emailedTo     String?
+  issuedAt      DateTime @default(now())
+  booking       Booking  @relation(fields: [bookingId], references: [id])
+}
+
+model BookingPaymentProof {
+  id           String   @id @default(uuid())
+  bookingId    String
+  uploadedById String?
+  fileUrl      String
+  fileName     String
+  fileType     String?
+  createdAt    DateTime @default(now())
+  booking      Booking  @relation(fields: [bookingId], references: [id])
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id])
+
+  @@index([bookingId])
+  @@index([uploadedById])
+}

@@ -150,7 +150,7 @@ export default function PassengerServicesPage() {
     const loadBookings = useCallback(async () => {
         try {
             setLoadingBookings(true);
-            const res = await fetch("/api/bookings");
+            const res = await fetch("/api/bookings", { credentials: "include" });
             if (!res.ok) return;
             const data = (await res.json()) as BookingOption[];
             setBookings(data || []);
@@ -164,7 +164,7 @@ export default function PassengerServicesPage() {
     const loadTrips = useCallback(async () => {
         try {
             setLoadingTrips(true);
-            const res = await fetch("/api/trips");
+            const res = await fetch("/api/trips", { credentials: "include" });
             if (!res.ok) return;
             const data = (await res.json()) as TripOption[];
             setTrips(data || []);
@@ -178,7 +178,7 @@ export default function PassengerServicesPage() {
     const loadInsurance = useCallback(async () => {
         try {
             setLoadingInsurance(true);
-            const res = await fetch("/api/vas?kind=insurance");
+            const res = await fetch("/api/vas?kind=insurance", { credentials: "include" });
             if (!res.ok) return;
             const data = (await res.json()) as Insurance[];
             setInsurances(data || []);
@@ -192,7 +192,7 @@ export default function PassengerServicesPage() {
     const loadCargo = useCallback(async () => {
         try {
             setLoadingCargo(true);
-            const res = await fetch("/api/vas?kind=cargo");
+            const res = await fetch("/api/vas?kind=cargo", { credentials: "include" });
             if (!res.ok) return;
             const data = (await res.json()) as Cargo[];
             setCargos(data || []);
@@ -206,7 +206,7 @@ export default function PassengerServicesPage() {
     const loadHotels = useCallback(async () => {
         try {
             setLoadingHotel(true);
-            const res = await fetch("/api/vas?kind=hotel");
+            const res = await fetch("/api/vas?kind=hotel", { credentials: "include" });
             if (!res.ok) return;
             const data = (await res.json()) as Hotel[];
             setHotels(data || []);
@@ -220,7 +220,7 @@ export default function PassengerServicesPage() {
     const loadGroups = useCallback(async () => {
         try {
             setLoadingGroup(true);
-            const res = await fetch("/api/vas?kind=group");
+            const res = await fetch("/api/vas?kind=group", { credentials: "include" });
             if (!res.ok) return;
             const data = (await res.json()) as GroupBooking[];
             setGroups(data || []);
@@ -266,6 +266,7 @@ export default function PassengerServicesPage() {
             setInsSubmitting(true);
             const res = await fetch("/api/vas", {
                 method: "POST",
+                credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     kind: "insurance",
@@ -321,6 +322,7 @@ export default function PassengerServicesPage() {
             setCargoSubmitting(true);
             const res = await fetch("/api/vas", {
                 method: "POST",
+                credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     kind: "cargo",
@@ -380,6 +382,7 @@ export default function PassengerServicesPage() {
             setGroupSubmitting(true);
             const res = await fetch("/api/vas", {
                 method: "POST",
+                credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     kind: "group",

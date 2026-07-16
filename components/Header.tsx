@@ -22,6 +22,14 @@ export default function Header() {
     useEffect(() => setMounted(true), []);
     const router = useRouter();
 
+    const roleKey = String((session?.user as any)?.role || "").toLowerCase();
+    const homeHref =
+        roleKey === "garage_owner" ? "/garage-owner/dashboard" :
+        roleKey === "admin" ? "/admin/dashboard" :
+        roleKey === "supervisor" || roleKey === "staff" ? "/supervisor/dashboard" :
+        roleKey === "mechanic" ? "/mechanic/tasks" :
+        "/passenger/bookings";
+
     const isDark = mounted ? resolvedTheme === "dark" : false;
     const { toast } = useToast();
 
@@ -120,7 +128,7 @@ export default function Header() {
                     </button>
                     {/* Hide left logo on mobile to avoid duplication with center logo */}
                     <Link
-                        href="/"
+                        href={homeHref}
                         className="hidden md:flex items-center gap-3"
                     >
                         <span className="font-semibold text-lg">

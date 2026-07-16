@@ -12,6 +12,9 @@ export async function GET() {
 
         const garages = await prisma.garage.findMany({
             include: {
+                owner: {
+                    select: { id: true, fullName: true, email: true },
+                },
                 buses: {
                     select: {
                         id: true,
@@ -22,7 +25,7 @@ export async function GET() {
                         seatCount: true,
                     },
                 },
-                _count: { select: { buses: true, maintenances: true } },
+                _count: { select: { buses: true, maintenances: true, mechanics: true } },
             },
             orderBy: { createdAt: "desc" },
         });
@@ -48,6 +51,7 @@ export async function POST(req: Request) {
             contactPhone?: string;
             contactEmail?: string;
             managerName?: string;
+            ownerId?: string;
         };
 
         const name = String(body?.name || "").trim();
@@ -63,6 +67,7 @@ export async function POST(req: Request) {
                 contactPhone: body?.contactPhone || null,
                 contactEmail: body?.contactEmail || null,
                 managerName: body?.managerName || null,
+                ownerId: body?.ownerId || null,
             },
         });
 
@@ -88,6 +93,7 @@ export async function PATCH(req: Request) {
             contactPhone?: string;
             contactEmail?: string;
             managerName?: string;
+            ownerId?: string | null;
         };
 
         const id = String(body?.id || "").trim();
@@ -104,6 +110,7 @@ export async function PATCH(req: Request) {
                 contactPhone: body?.contactPhone || undefined,
                 contactEmail: body?.contactEmail || undefined,
                 managerName: body?.managerName || undefined,
+                ownerId: body?.ownerId !== undefined ? body.ownerId : undefined,
             },
         });
 

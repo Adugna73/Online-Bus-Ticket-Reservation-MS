@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { parseStationInput } from "@/lib/station-input";
 
 type StationOption = {
     id: string;
@@ -118,19 +119,6 @@ export default function RoutesManagementClient() {
         return byPartial?.id || "";
     };
 
-    const parseStationInput = (value: string) => {
-        const raw = value.trim();
-        if (!raw) return null;
-        const match = raw.match(/^(.*)\(([^)]+)\)\s*$/);
-        if (match) {
-            return {
-                name: match[1].trim(),
-                code: match[2].trim().toUpperCase(),
-            };
-        }
-        return null;
-    };
-
     const createStationIfMissing = async (value: string) => {
         const parsed = parseStationInput(value);
         if (!parsed) return "";
@@ -196,7 +184,7 @@ export default function RoutesManagementClient() {
                 .join(" and ");
             if (!originId || !destinationId) {
                 const helper =
-                    "Use existing stations or type like 'Nekemte (NKMT)'.";
+                    "You can use an existing station or type a new one like 'Nekemte (NKMT)' or just 'Nekemte'.";
                 setError(`Please select ${missing}. ${helper}`);
                 return;
             }

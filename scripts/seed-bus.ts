@@ -279,8 +279,11 @@ async function resetData() {
     await prisma.bookingSeat.deleteMany();
     await prisma.booking.deleteMany();
     await prisma.trip.deleteMany();
+    await prisma.vehicleMaintenance.deleteMany();
+    await prisma.mechanic.deleteMany();
     await prisma.seat.deleteMany();
     await prisma.bus.deleteMany();
+    await prisma.garage.deleteMany();
     await prisma.route.deleteMany();
     await prisma.station.deleteMany();
     await prisma.busCompany.deleteMany();
@@ -305,7 +308,34 @@ async function main() {
     );
 
     const buses: Awaited<ReturnType<typeof prisma.bus.create>>[] = [];
+    const driverPasswordHash = await bcrypt.hash("bus@12345", 10);
     for (const def of BUS_DEFINITIONS) {
+        // Create a DRIVER user account for this bus so the driver can log in
+        // (e.g. "Tesfaye Bekele" -> tesfayebekele@gmail.com / bus@12345).
+        const driverEmail =
+            def.driverName
+                ?.toLowerCase()
+                .replace(/[^a-z]+/g, "")
+                .slice(0, 24) + "@gmail.com";
+        let driverUserId: string | undefined;
+        if (def.driverName && driverEmail) {
+            const driverUser = await prisma.user.upsert({
+                where: { email: driverEmail },
+                update: {
+                    fullName: def.driverName,
+                    passwordHash: driverPasswordHash,
+                    role: UserRole.DRIVER,
+                },
+                create: {
+                    fullName: def.driverName,
+                    email: driverEmail,
+                    passwordHash: driverPasswordHash,
+                    role: UserRole.DRIVER,
+                },
+            });
+            driverUserId = driverUser.id;
+        }
+
         const bus = await prisma.bus.create({
             data: {
                 companyId: companies[def.companyIndex].id,
@@ -313,6 +343,7 @@ async function main() {
                 model: def.model,
                 level: def.level,
                 driverName: def.driverName,
+                driverId: driverUserId,
                 imageUrl: def.imageUrl,
                 amenities: def.amenities,
                 safetyChecklist: def.safetyChecklist,
@@ -322,6 +353,9 @@ async function main() {
         });
         buses.push(bus);
     }
+    console.log(
+        `[seed] Created ${BUS_DEFINITIONS.length} buses with DRIVER accounts (email=<firstname><lastname>@gmail.com, password=bus@12345)`,
+    );
 
     const allSeatsData = buses.flatMap((bus) => {
         const def = BUS_DEFINITIONS[buses.indexOf(bus)];
@@ -414,6 +448,47 @@ async function main() {
             passwordHash,
             role: UserRole.PASSENGER,
         },
+    });
+
+    const garageOwner = await prisma.user.upsert({
+        where: { email: "garage@bus.et" },
+        update: { fullName: "Garage Owner Demo", phone: "+251-91-000-0004", passwordHash, role: UserRole.GARAGE_OWNER },
+        create: {
+            fullName: "Garage Owner Demo",
+            email: "garage@bus.et",
+            phone: "+251-91-000-0004",
+            passwordHash,
+            role: UserRole.GARAGE_OWNER,
+        },
+    });
+
+    const demoGarage = await prisma.garage.create({
+        data: {
+            name: "Addis Auto Garage",
+            address: "Bole Road, Addis Ababa",
+            city: "Addis Ababa",
+            contactPhone: "+251-91-000-0004",
+            contactEmail: "garage@bus.et",
+            managerName: "Garage Owner Demo",
+            ownerId: garageOwner.id,
+        },
+    });
+
+    await prisma.mechanic.createMany({
+        data: [
+            { name: "Tesfaye Wolde", position: "General Mechanic", phone: "+251-91-111-0001", email: "tesfaye@bus.et", garageId: demoGarage.id },
+            { name: "Alem Tsegaye", position: "Electrician", phone: "+251-91-111-0002", email: "alem@bus.et", garageId: demoGarage.id },
+            { name: "Binyam Desta", position: "Brake Specialist", phone: "+251-91-111-0003", email: "binyam@bus.et", garageId: demoGarage.id },
+        ],
+    });
+
+    const mechanicPasswordHash = await bcrypt.hash("bus@12345", 10);
+    await prisma.user.createMany({
+        data: [
+            { fullName: "Tesfaye Wolde", email: "tesfaye@bus.et", phone: "+251-91-111-0001", passwordHash: mechanicPasswordHash, role: UserRole.MECHANIC },
+            { fullName: "Alem Tsegaye", email: "alem@bus.et", phone: "+251-91-111-0002", passwordHash: mechanicPasswordHash, role: UserRole.MECHANIC },
+            { fullName: "Binyam Desta", email: "binyam@bus.et", phone: "+251-91-111-0003", passwordHash: mechanicPasswordHash, role: UserRole.MECHANIC },
+        ],
     });
 
     const firstRoute = routes[0];

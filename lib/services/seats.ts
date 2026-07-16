@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   BookingStatus,
+  PaymentStatus,
   Prisma,
   SeatEventKind,
   SeatHoldStatus,
@@ -8,7 +9,10 @@ import {
 
 // GAP 2: Seat Availability — DB-backed atomic holds, event sourcing, status.
 
-const HOLD_TTL_MIN = 10;
+const HOLD_TTL_MIN = 15;
+// Unpaid PENDING bookings are auto-cancelled after this many minutes, which
+// releases their seats back to the pool for other passengers to book.
+const BOOKING_TTL_MIN = 15;
 
 export type SeatState = "available" | "held" | "booked";
 
@@ -123,12 +127,104 @@ async function expireStaleHolds(tripId?: string): Promise<void> {
   });
 }
 
+// Natural/numeric comparator for seat numbers so "2" < "10" < "11".
+// Falls back to localeCompare for non-numeric labels (e.g. "VIP-1").
+export function compareSeatNumbers(a: string, b: string): number {
+  const na = parseInt(a, 10);
+  const nb = parseInt(b, 10);
+  if (!isNaN(na) && !isNaN(nb)) {
+    if (na !== nb) return na - nb;
+    return a.localeCompare(b);
+  }
+  if (!isNaN(na)) return -1;
+  if (!isNaN(nb)) return 1;
+  return a.localeCompare(b);
+}
+
+// Cancel PENDING bookings that were never paid within BOOKING_TTL_MIN minutes.
+// Deleting their BookingSeat rows releases the seats for others to book. Any
+// related SeatHold is marked RELEASED and an UNBOOK SeatEvent is recorded.
+export async function expireStaleBookings(): Promise<{
+  cancelled: number;
+  seatsReleased: number;
+}> {
+  const deadline = new Date(Date.now() - BOOKING_TTL_MIN * 60_000);
+
+  const staleBookings = await prisma.booking.findMany({
+    where: {
+      status: BookingStatus.PENDING,
+      createdAt: { lt: deadline },
+      OR: [
+        { payment: null },
+        { payment: { status: { not: PaymentStatus.PAID } } },
+      ],
+    },
+    select: {
+      id: true,
+      tripId: true,
+      seats: { select: { id: true, seatId: true } },
+    },
+  });
+
+  if (staleBookings.length === 0) return { cancelled: 0, seatsReleased: 0 };
+
+  let seatsReleased = 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const b of staleBookings) {
+      await tx.bookingSeat.deleteMany({ where: { bookingId: b.id } });
+
+      await tx.payment.deleteMany({ where: { bookingId: b.id } });
+
+      await tx.booking.update({
+        where: { id: b.id },
+        data: { status: BookingStatus.CANCELLED },
+      });
+
+      for (const bs of b.seats) {
+        seatsReleased += 1;
+        await tx.seatHold.deleteMany({
+          where: {
+            tripId: b.tripId,
+            seatId: bs.seatId,
+            status: SeatHoldStatus.RELEASED,
+          },
+        });
+        const hold = await tx.seatHold.findFirst({
+          where: {
+            tripId: b.tripId,
+            seatId: bs.seatId,
+            status: SeatHoldStatus.HELD,
+          },
+        });
+        if (hold) {
+          await tx.seatHold.update({
+            where: { id: hold.id },
+            data: { status: SeatHoldStatus.RELEASED },
+          });
+        }
+        await tx.seatEvent.create({
+          data: {
+            tripId: b.tripId,
+            seatId: bs.seatId,
+            kind: SeatEventKind.UNBOOK,
+            meta: { reason: "booking_expired", bookingId: b.id },
+          },
+        });
+      }
+    }
+  });
+
+  return { cancelled: staleBookings.length, seatsReleased };
+}
+
 // Compute the full seat map for a trip, including live availability status.
 export async function getTripSeats(
   tripId: string,
   userId?: string,
 ): Promise<TripSeatMapResult> {
   await expireStaleHolds(tripId);
+  await expireStaleBookings();
 
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
@@ -144,8 +240,9 @@ export async function getTripSeats(
 
   const seats = await prisma.seat.findMany({
     where: { busId: trip.busId },
-    orderBy: { seatNumber: "asc" },
   });
+
+  seats.sort((a, b) => compareSeatNumbers(a.seatNumber, b.seatNumber));
 
   const bookedSet = new Set(trip.bookingSeats.map((b) => b.seatId));
 
@@ -219,6 +316,7 @@ export async function holdSeat(
   userId: string,
 ): Promise<{ id: string; expiresAt: string; ttlMin: number }> {
   await expireStaleHolds(tripId);
+  await expireStaleBookings();
 
   const seat = await prisma.seat.findUnique({ where: { id: seatId } });
   if (!seat || !seat.isActive) throw seatErr("seat_invalid");
@@ -311,6 +409,7 @@ export async function bookSeats(
   if (seatIds.length === 0) throw seatErr("no_seats");
 
   await expireStaleHolds(tripId);
+  await expireStaleBookings();
 
   const trip = await prisma.trip.findUnique({ where: { id: tripId } });
   if (!trip) throw seatErr("trip_not_found");

@@ -1,0 +1,289 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Serif+Display&display=swap');
+
+/* Force select dropdowns to use black bg and white text in dark mode, including native popup */
+.dark select, .dark select option, .dark select optgroup {
+  background-color: #000 !important;
+  color: #fff !important;
+}
+/* Sidebar forced black for dark mode */
+.dark .sidebar-black {
+  background-color: #000 !important;
+  color: #fff !important;
+}
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+/* --------------------------------------------------------------------------
+   Animations
+   ----------------------------------------------------------------------- */
+@keyframes caret-blink {
+  0%, 70%, 100% { opacity: 1; }
+  20%, 50% { opacity: 0; }
+}
+.animate-caret-blink { animation: caret-blink 1.25s ease-out infinite; }
+
+/* --------------------------------------------------------------------------
+   Base layout & typography
+   ----------------------------------------------------------------------- */
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  font-family: 'Space Grotesk', 'DM Serif Display', serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* --------------------------------------------------------------------------
+   Theme variables (light)
+   Keep exact values — only reorganized for readability.
+   ----------------------------------------------------------------------- */
+:root {
+  --background: 1 0 0;
+  --foreground: 0.141 0.005 285.823;
+  --card: 1 0 0;
+  --card-foreground: 0.141 0.005 285.823;
+  --popover: 1 0 0;
+  --popover-foreground: 0.141 0.005 285.823;
+  --primary: 0.761 0.1736 129.58; /* #8DC63F */
+  --primary-foreground: 0.985 0 0;
+  --secondary: 0.6 0.01 286; /* gray-500 */
+  --secondary-foreground: 0.21 0.006 285.885;
+  --muted: 0.967 0.001 286.375;
+  --muted-foreground: 0.552 0.016 285.938;
+  --accent: 0.967 0.001 286.375;
+  --accent-foreground: 0.21 0.006 285.885;
+  --destructive: 0.603 0.2347 26.99; /* #ED1C24 */
+  --destructive-foreground: 0.985 0 0;
+  --border: 0.92 0.004 286.32;
+  --input: 0.92 0.004 286.32;
+  --ring: 0.871 0.006 286.286;
+  --chart-1: 0.646 0.222 41.116;
+  --chart-2: 0.6 0.118 184.704;
+  --chart-3: 0.398 0.07 227.392;
+  --chart-4: 0.828 0.189 84.429;
+  --chart-5: 0.769 0.188 70.08;
+  --radius: 0.625rem;
+  --sidebar: 0.985 0 0;
+  --sidebar-foreground: 0.141 0.005 285.823;
+  --sidebar-primary: 0.761 0.1736 129.58; /* #8DC63F */
+  --button-background: var(--sidebar-primary);
+  --button-foreground: var(--sidebar-primary-foreground);
+  --sidebar-primary-foreground: 0.985 0 0;
+  --sidebar-accent: 0.967 0.001 286.375;
+}
+
+/* light-theme body fallback color is now covered by generic token rule */
+
+/* Subtle geometric pattern overlay for digital/tech feel */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image:
+    linear-gradient(90deg, rgba(141, 198, 63, 0.015) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(141, 198, 63, 0.015) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* --------------------------------------------------------------------------
+   Additional color tokens (light)
+   ----------------------------------------------------------------------- */
+:root {
+  --success: 0.65 0.15 140; /* #00AB4E */
+  --success-foreground: 0.985 0 0;
+  --warning: 0.8462 0.1716 85.29; /* #FFC20E */
+  --warning-foreground: 0.141 0.005 285.823;
+  --info: 0.5381 0.1433 247.55; /* #0072BC */
+  --info-foreground: 0.985 0 0;
+}
+
+/* --------------------------------------------------------------------------
+   Dark theme overrides
+   ----------------------------------------------------------------------- */
+.dark {
+  --background: 0.141 0.005 285.823;
+  --foreground: 0.985 0 0;
+  --card: 0.141 0.005 285.823;
+  --card-foreground: 0.985 0 0;
+  --popover: 0.141 0.005 285.823;
+  --popover-foreground: 0.985 0 0;
+  --primary: 0.985 0 0;
+  --primary-foreground: 0.21 0.006 285.885;
+  --secondary: 0.274 0.006 286.033;
+  --secondary-foreground: 0.985 0 0;
+  --muted: 0.274 0.006 286.033;
+  --muted-foreground: 0.705 0.015 286.067;
+  --accent: 0.274 0.006 286.033;
+  --accent-foreground: 0.985 0 0;
+  --destructive: 0.396 0.141 25.723;
+  --destructive-foreground: 0.637 0.237 25.331;
+  --border: 0.274 0.006 286.033;
+  --input: 0.274 0.006 286.033;
+  --ring: 0.442 0.017 285.786;
+  --chart-1: 0.488 0.243 264.376;
+  --chart-2: 0.696 0.17 162.48;
+  --chart-3: 0.769 0.188 70.08;
+  --chart-4: 0.627 0.265 303.9;
+  --chart-5: 0.645 0.246 16.439;
+  --sidebar: 0.21 0.006 285.885;
+  --sidebar-foreground: 0.985 0 0;
+  --sidebar-primary: 0.761 0.1736 129.58;
+  --sidebar-primary-foreground: 0.985 0 0;
+  --button-background: var(--sidebar-primary);
+  --button-foreground: var(--sidebar-primary-foreground);
+  --sidebar-accent: 0.274 0.006 286.033;
+  --sidebar-accent-foreground: 0.985 0 0;
+  --sidebar-border: 0.274 0.006 286.033;
+  --sidebar-ring: 0.442 0.017 285.786;
+}
+
+/* ensure any remaining bg-white/text-black switch to tokens when dark */
+.dark .bg-white { background-color: oklch(var(--background)) !important; }
+.dark .text-black { color: oklch(var(--foreground)) !important; }
+
+/* --------------------------------------------------------------------------
+   Convenience mappings used by components that expect --color-... tokens
+   These simply reference the main tokens and do NOT change values.
+   ----------------------------------------------------------------------- */
+:root {
+  --color-background: oklch(var(--background));
+  --color-foreground: oklch(var(--foreground));
+  --color-card: oklch(var(--card));
+  --color-card-foreground: oklch(var(--card-foreground));
+  --color-popover: oklch(var(--popover));
+  --color-popover-foreground: oklch(var(--popover-foreground));
+  --color-primary: oklch(var(--primary));
+  --color-primary-foreground: oklch(var(--primary-foreground));
+  --color-secondary: oklch(var(--secondary));
+  --color-secondary-foreground: oklch(var(--secondary-foreground));
+  --color-muted: oklch(var(--muted));
+  --color-muted-foreground: oklch(var(--muted-foreground));
+  --color-accent: oklch(var(--accent));
+  --color-accent-foreground: oklch(var(--accent-foreground));
+  --color-destructive: oklch(var(--destructive));
+  --color-destructive-foreground: oklch(var(--destructive-foreground));
+  --color-success: oklch(var(--success));
+  --color-success-foreground: oklch(var(--success-foreground));
+  --color-warning: oklch(var(--warning));
+  --color-warning-foreground: oklch(var(--warning-foreground));
+  --color-info: oklch(var(--info));
+  --color-info-foreground: oklch(var(--info-foreground));
+  --color-border: oklch(var(--border));
+  --color-input: oklch(var(--input));
+  --color-ring: oklch(var(--ring));
+  --color-chart-1: oklch(var(--chart-1));
+  --color-chart-2: oklch(var(--chart-2));
+  --color-chart-3: oklch(var(--chart-3));
+  --color-chart-4: oklch(var(--chart-4));
+  --color-chart-5: oklch(var(--chart-5));
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* --------------------------------------------------------------------------
+   Utility & small resets (kept minimal and compatible with Tailwind build)
+   ----------------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; }
+.hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+::-ms-reveal { display: none; }
+input::-ms-reveal, input::-ms-clear { display: none; }
+input[type="password"]::-ms-reveal, input[type="password"]::-ms-clear { display: none; }
+.phone::-webkit-inner-spin-button, .phone::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.phone { -moz-appearance: textfield; appearance: textfield; -webkit-appearance: textfield; }
+.line-through { text-decoration: none !important; background-color: #e5e7eb !important; cursor: not-allowed; }
+
+/* Generic safe defaults using tokens (do not alter values) */
+* { border-color: oklch(var(--border)); }
+body { background-color: oklch(var(--background)); color: oklch(var(--foreground)); }
+
+/* --------------------------------------------------------------------------
+   Mobile (small-screen) tweaks: make content use full width on narrow devices
+   Target: devices around 320x582 and similar small viewports
+   ----------------------------------------------------------------------- */
+@media (max-width: 420px) {
+  html, body, #__next { width: 100%; overflow-x: hidden; }
+  /* Make common max-width utility containers span full width on tiny screens */
+  .max-w-7xl, .max-w-screen-2xl, .max-w-md, .max-w-xl, .max-w-2xl {
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+  /* Reduce heavy horizontal paddings used across the app for small screens */
+  .px-6 { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+  .px-8 { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+  .px-10 { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+  .px-4 { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+  /* Remove minor left offsets that can create horizontal gaps */
+  .ml-2 { margin-left: 0 !important; }
+  /* Ensure header and main occupy full viewport width */
+  header, main { width: 100% !important; }
+}
+
+/* --------------------------------------------------------------------------
+  Bus reservation branded buttons (shared across login & Fleet forms)
+   ----------------------------------------------------------------------- */
+.et-primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 9999px;
+  border: 1px solid oklch(var(--border));
+  background: oklch(var(--button-background));
+  color: oklch(var(--button-foreground));
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.et-primary-button:hover {
+  filter: brightness(0.95);
+}
+
+.et-primary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.et-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 9999px;
+  border: 1px solid oklch(var(--border));
+  background: transparent;
+  color: oklch(var(--foreground));
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.et-secondary-button:hover {
+  background-color: color-mix(in oklch, oklch(var(--muted)) 60%, transparent);
+}
+
+.et-secondary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

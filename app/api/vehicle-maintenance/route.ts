@@ -10,6 +10,7 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: "unauthorized" }, { status: 401 });
         }
 
+        const role = String(session.user.role || "").toLowerCase();
         const url = new URL(req.url);
         const busId = url.searchParams.get("busId");
         const garageId = url.searchParams.get("garageId");
@@ -17,7 +18,20 @@ export async function GET(req: Request) {
 
         const where: any = {};
         if (busId) where.busId = busId;
-        if (garageId) where.garageId = garageId;
+
+        if (role === "garage_owner") {
+            const garage = await prisma.garage.findFirst({
+                where: { ownerId: session.user.id },
+                select: { id: true },
+            });
+            if (!garage) {
+                return NextResponse.json([]);
+            }
+            where.garageId = garage.id;
+        } else if (garageId) {
+            where.garageId = garageId;
+        }
+
         if (status) where.status = status;
 
         const maintenances = await prisma.vehicleMaintenance.findMany({
@@ -41,6 +55,15 @@ export async function GET(req: Request) {
                         contactPhone: true,
                         contactEmail: true,
                     },
+                },
+                requestedBy: {
+                    select: { id: true, fullName: true, email: true },
+                },
+                assignedMechanic: {
+                    select: { id: true, name: true, position: true, phone: true },
+                },
+                driver: {
+                    select: { id: true, fullName: true, email: true },
                 },
             },
             orderBy: { createdAt: "desc" },
@@ -89,7 +112,7 @@ export async function POST(req: Request) {
             data: {
                 busId,
                 garageId,
-                status: (body?.status as any) || "SCHEDULED",
+                status: "REQUESTED",
                 partsNeedingMaintenance: body?.partsNeedingMaintenance || null,
                 description: body?.description || null,
                 mechanicNotes: body?.mechanicNotes || null,
@@ -109,6 +132,7 @@ export async function POST(req: Request) {
                     ? Number(body.estimatedCost)
                     : null,
                 actualCost: body?.actualCost ? Number(body.actualCost) : null,
+                requestedById: session.user.id,
                 updatedBy: session.user.id,
             },
         });
@@ -140,6 +164,17 @@ export async function PATCH(req: Request) {
             estimatedCost?: number | null;
             actualCost?: number | null;
             busStatus?: string;
+            assignedMechanicId?: string | null;
+            acceptedAt?: string | null;
+            rejectionReason?: string | null;
+            costRejectedReason?: string | null;
+            paymentTxRef?: string | null;
+            telebirrRef?: string | null;
+            telebirrAmount?: number | null;
+            driverAcceptedAt?: string | null;
+            busReleasedAt?: string | null;
+            adminConfirmedAt?: string | null;
+            driverId?: string | null;
         };
 
         const id = String(body?.id || "").trim();
@@ -147,51 +182,97 @@ export async function PATCH(req: Request) {
             return NextResponse.json({ error: "id_required" }, { status: 400 });
         }
 
-        const updated = await prisma.vehicleMaintenance.update({
+        const updateData: any = {
+            status: (body?.status as any) || undefined,
+            partsNeedingMaintenance: body?.partsNeedingMaintenance || undefined,
+            description: body?.description || undefined,
+            mechanicNotes: body?.mechanicNotes || undefined,
+            scheduledDate:
+                body?.scheduledDate !== undefined
+                    ? body.scheduledDate
+                        ? new Date(body.scheduledDate)
+                        : null
+                    : undefined,
+            completedDate:
+                body?.completedDate !== undefined
+                    ? body.completedDate
+                        ? new Date(body.completedDate)
+                        : null
+                    : undefined,
+            ownerPickupDate:
+                body?.ownerPickupDate !== undefined
+                    ? body.ownerPickupDate
+                        ? new Date(body.ownerPickupDate)
+                        : null
+                    : undefined,
+            ownerDropoffDate:
+                body?.ownerDropoffDate !== undefined
+                    ? body.ownerDropoffDate
+                        ? new Date(body.ownerDropoffDate)
+                        : null
+                    : undefined,
+            estimatedCost:
+                body?.estimatedCost !== undefined
+                    ? body.estimatedCost === null
+                        ? null
+                        : Number(body.estimatedCost)
+                    : undefined,
+            actualCost:
+                body?.actualCost !== undefined
+                    ? body.actualCost === null
+                        ? null
+                        : Number(body.actualCost)
+                    : undefined,
+            updatedBy: session.user.id,
+        };
+
+        if (body?.assignedMechanicId !== undefined) {
+            updateData.assignedMechanicId = body.assignedMechanicId || null;
+        }
+
+        if (body?.acceptedAt !== undefined) {
+            updateData.acceptedAt = body.acceptedAt ? new Date(body.acceptedAt) : null;
+        }
+
+        if (body?.rejectionReason !== undefined) {
+            updateData.rejectionReason = body.rejectionReason || null;
+        }
+
+        if (body?.costRejectedReason !== undefined) {
+            updateData.costRejectedReason = body.costRejectedReason || null;
+        }
+
+        if (body?.paymentTxRef !== undefined) {
+            updateData.paymentTxRef = body.paymentTxRef || null;
+        }
+
+        if (body?.telebirrRef !== undefined) {
+            updateData.telebirrRef = body.telebirrRef || null;
+        }
+
+        if (body?.telebirrAmount !== undefined) {
+            updateData.telebirrAmount = body.telebirrAmount ?? null;
+        }
+
+        if (body?.driverAcceptedAt !== undefined) {
+            updateData.driverAcceptedAt = body.driverAcceptedAt ? new Date(body.driverAcceptedAt) : null;
+        }
+
+        if (body?.busReleasedAt !== undefined) {
+            updateData.busReleasedAt = body.busReleasedAt ? new Date(body.busReleasedAt) : null;
+        }
+
+        if (body?.adminConfirmedAt !== undefined) {
+            updateData.adminConfirmedAt = body.adminConfirmedAt ? new Date(body.adminConfirmedAt) : null;
+        }
+
+        if (body?.driverId !== undefined) {
+            updateData.driverId = body.driverId || null;
+        }
+
+        const updated = await (prisma.vehicleMaintenance as any).update({
             where: { id },
-            data: {
-                status: (body?.status as any) || undefined,
-                partsNeedingMaintenance: body?.partsNeedingMaintenance || undefined,
-                description: body?.description || undefined,
-                mechanicNotes: body?.mechanicNotes || undefined,
-                scheduledDate:
-                    body?.scheduledDate !== undefined
-                        ? body.scheduledDate
-                            ? new Date(body.scheduledDate)
-                            : null
-                        : undefined,
-                completedDate:
-                    body?.completedDate !== undefined
-                        ? body.completedDate
-                            ? new Date(body.completedDate)
-                            : null
-                        : undefined,
-                ownerPickupDate:
-                    body?.ownerPickupDate !== undefined
-                        ? body.ownerPickupDate
-                            ? new Date(body.ownerPickupDate)
-                            : null
-                        : undefined,
-                ownerDropoffDate:
-                    body?.ownerDropoffDate !== undefined
-                        ? body.ownerDropoffDate
-                            ? new Date(body.ownerDropoffDate)
-                            : null
-                        : undefined,
-                estimatedCost:
-                    body?.estimatedCost !== undefined
-                        ? body.estimatedCost === null
-                            ? null
-                            : Number(body.estimatedCost)
-                        : undefined,
-                actualCost:
-                    body?.actualCost !== undefined
-                        ? body.actualCost === null
-                            ? null
-                            : Number(body.actualCost)
-                        : undefined,
-                updatedBy: session.user.id,
-            },
+            data: updateData as any,
         });
 
         if (body?.busStatus) {

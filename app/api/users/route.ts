@@ -16,6 +16,10 @@ function roleKeyToEnum(roleKey: string): string {
       return 'STAFF';
     case 'mechanic':
       return 'MECHANIC';
+    case 'garage_owner':
+      return 'GARAGE_OWNER';
+    case 'driver':
+      return 'DRIVER';
     default:
       return 'PASSENGER';
   }

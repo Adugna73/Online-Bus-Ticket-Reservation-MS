@@ -19,7 +19,9 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function FeaturesHubPage() {
   const { t } = useI18n();
-  const [features, setFeatures] = useState<FeatureDef[]>(FEATURES);
+  const [features, setFeatures] = useState<FeatureDef[]>(
+    FEATURES.filter((f) => f.priority === "high")
+  );
 
   useEffect(() => {
     fetch("/api/features")
