@@ -47,7 +47,9 @@ export default function DriverBusPage() {
             const res = await fetch("/api/vehicle-maintenance", { credentials: "include" });
             if (!res.ok) throw new Error("Failed");
             const all = await res.json();
-            setTasks(all.filter((t: any) => t.driverId === session?.user?.id));
+            // Server already scopes to this driver's buses (maintenance.driverId
+            // or bus.driverId), so no extra client filter is needed.
+            setTasks(Array.isArray(all) ? all : []);
         } catch {
             toast({ title: "Error", description: "Failed to load", variant: "destructive" });
         } finally {

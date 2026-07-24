@@ -75,9 +75,10 @@ export default function SidebarV2({
                 fetch("/api/vehicle-maintenance", { credentials: "include" })
                     .then((r) => r.json())
                     .then((data: any[]) => {
-                        const costPending = data.filter((m: any) => m.status === "COST_PENDING").length;
-                        const awaitingPayment = data.filter((m: any) => m.status === "AWAITING_PAYMENT" || m.status === "COMPLETED").length;
-                        setNotifications({ costPending, awaitingPayment });
+                        const actionNeeded = data.filter((m: any) =>
+                            ["COST_PENDING", "AWAITING_PAYMENT", "DRIVER_ACCEPTED", "BUS_READY"].includes(m.status),
+                        ).length;
+                        setNotifications({ costPending: 0, awaitingPayment: actionNeeded });
                     })
                     .catch(() => {});
             } else if (role === "garage_owner") {

@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { VehicleMaintenanceStatus, TripStatus } from "@prisma/client";
+
+// Maintenance statuses that mean the bus is back in service. Any other status
+// means the bus is still under maintenance and must not be offered for booking.
+const MAINTENANCE_TERMINAL_STATUSES = [
+    VehicleMaintenanceStatus.COMPLETED,
+    VehicleMaintenanceStatus.CANCELLED,
+    VehicleMaintenanceStatus.NOT_FIXABLE,
+];
 
 export async function GET() {
     try {
@@ -11,6 +20,18 @@ export async function GET() {
         }
 
         const trips = await prisma.trip.findMany({
+            where: {
+                // Hide trips whose bus is currently under maintenance. A bus is
+                // bookable only when it has no maintenance record outside the
+                // terminal statuses (COMPLETED/CANCELLED/NOT_FIXABLE).
+                bus: {
+                    maintenances: {
+                        every: {
+                            status: { in: MAINTENANCE_TERMINAL_STATUSES },
+                        },
+                    },
+                },
+            },
             include: {
                 bus: true,
                 route: {
@@ -108,6 +129,41 @@ export async function POST(req: Request) {
 
         if (!routeId || !busId || !departAt || !arriveAt || isNaN(basePrice)) {
             return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
+        }
+
+        // A bus can only be assigned to one trip per calendar day. Block
+        // double-booking and tell the admin/staff which trip already holds it.
+        const dayStart = new Date(departAt);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setDate(dayEnd.getDate() + 1);
+        const conflict = await prisma.trip.findFirst({
+            where: {
+                busId,
+                departAt: { gte: dayStart, lt: dayEnd },
+                status: { notIn: [TripStatus.CANCELLED, TripStatus.COMPLETED] },
+            },
+            include: {
+                bus: { select: { plateNumber: true } },
+                route: {
+                    include: {
+                        originStation: { select: { name: true } },
+                        destinationStation: { select: { name: true } },
+                    },
+                },
+            },
+        });
+        if (conflict) {
+            const routeLabel = conflict.route
+                ? `${conflict.route.originStation?.name ?? ""} → ${conflict.route.destinationStation?.name ?? ""}`
+                : "another trip";
+            return NextResponse.json(
+                {
+                    error: "bus_already_assigned",
+                    message: `Bus ${conflict.bus?.plateNumber ?? ""} is already assigned to ${routeLabel} on ${new Date(conflict.departAt).toLocaleString()}.`,
+                },
+                { status: 409 },
+            );
         }
 
         const trip = await prisma.trip.create({

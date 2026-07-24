@@ -96,7 +96,7 @@ export default function MaintenancePage() {
 
     const [items, setItems] = useState<MaintenanceItem[]>([]);
     const [mechanics, setMechanics] = useState<Mechanic[]>([]);
-    const [drivers, setDrivers] = useState<{ id: string; fullName: string }[]>([]);
+    const [drivers, setDrivers] = useState<{ id: string; fullName: string; email?: string }[]>([]);
     const [driverSelects, setDriverSelects] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -392,7 +392,7 @@ export default function MaintenancePage() {
                                                         <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); updateStatus(m.id, { status: "PARTS_ORDERED" }); }} disabled={actionLoading === m.id}>
                                                             Parts Ordered
                                                         </Button>
-                                                        <Button size="sm" onClick={(e) => { e.stopPropagation(); updateStatus(m.id, { status: "REPAIR_DONE", completedDate: new Date().toISOString(), busStatus: "active" }); }} disabled={actionLoading === m.id}>
+                                                        <Button size="sm" onClick={(e) => { e.stopPropagation(); updateStatus(m.id, { status: "REPAIR_DONE", completedDate: new Date().toISOString() }); }} disabled={actionLoading === m.id}>
                                                             <CheckCircle className="h-3 w-3 mr-1" /> Repair Done
                                                         </Button>
                                                     </>
@@ -414,21 +414,21 @@ export default function MaintenancePage() {
                                                         >
                                                             <option value="">Select driver...</option>
                                                             {m.bus?.driverName && (
-                                                                <option value={drivers.find((d) => d.fullName === m.bus.driverName)?.id || ""}>
+                                                                <option value={(m.bus as any)?.driverId || drivers.find((d) => d.fullName === m.bus.driverName)?.id || ""}>
                                                                     {m.bus.driverName} (bus driver)
                                                                 </option>
                                                             )}
                                                             {drivers
                                                                 .filter((d) => d.fullName !== m.bus?.driverName)
                                                                 .map((d) => (
-                                                                    <option key={d.id} value={d.id}>{d.fullName}</option>
+                                                                    <option key={d.id} value={d.id}>{d.fullName} ({d.email})</option>
                                                                 ))}
                                                         </select>
                                                         <Button
                                                             size="sm"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                const selectedDriverId = driverSelects[m.id] || m.driver?.id || drivers.find((d) => d.fullName === m.bus?.driverName)?.id;
+                                                                const selectedDriverId = driverSelects[m.id] || m.driver?.id || (m.bus as any)?.driverId || drivers.find((d) => d.fullName === m.bus?.driverName)?.id;
                                                                 if (!selectedDriverId) {
                                                                     toast({ title: "Error", description: "Please select a driver first", variant: "destructive" });
                                                                     return;

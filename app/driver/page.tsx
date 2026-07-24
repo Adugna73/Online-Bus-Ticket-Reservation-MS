@@ -21,6 +21,15 @@ type Trip = {
   passengers: any[];
 };
 
+type AssignedBus = {
+  id: string;
+  plateNumber: string;
+  model: string | null;
+  level: string | null;
+  seatCount: number;
+  status: string | null;
+};
+
 function formatDateTime(v?: string | null) {
   if (!v) return "—";
   const d = new Date(v);
@@ -38,13 +47,17 @@ export default function DriverDashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [assignedBuses, setAssignedBuses] = useState<AssignedBus[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.role === "driver") {
       fetch("/api/driver/trips", { credentials: "include" })
         .then((r) => r.json())
-        .then((data) => setTrips(data.trips || []))
+        .then((data) => {
+          setTrips(data.trips || []);
+          setAssignedBuses(data.assignedBuses || []);
+        })
         .catch(() => {})
         .finally(() => setLoading(false));
     } else if (status === "authenticated") {
@@ -70,7 +83,7 @@ export default function DriverDashboardPage() {
     );
   }
 
-  const bus = trips[0]?.bus;
+  const bus = assignedBuses[0] || trips[0]?.bus;
   const upcoming = trips.filter((t) => new Date(t.departAt) >= new Date(Date.now() - 3600000));
   const past = trips.filter((t) => new Date(t.departAt) < new Date(Date.now() - 3600000));
 

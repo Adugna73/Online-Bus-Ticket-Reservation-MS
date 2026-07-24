@@ -18,6 +18,7 @@ type Bus = {
     safetyChecklist?: any;
     seatLayout?: any;
     companyName?: string | null;
+    underMaintenance?: boolean;
 };
 
 type Route = {
@@ -185,6 +186,23 @@ export default function BusManagementClient() {
             setError("Please fill all trip fields.");
             return;
         }
+        const selectedBus = buses.find((b) => b.id === tripBusId);
+        if (selectedBus?.underMaintenance) {
+            setError(
+                `${selectedBus.plateNumber} is under maintenance and cannot be booked. Pick another bus.`,
+            );
+            return;
+        }
+        const departMs = new Date(tripDepartAt).getTime();
+        const arriveMs = new Date(tripArriveAt).getTime();
+        if (Number.isFinite(departMs) && departMs < Date.now()) {
+            setError("Departure time must be in the future.");
+            return;
+        }
+        if (Number.isFinite(departMs) && Number.isFinite(arriveMs) && arriveMs <= departMs) {
+            setError("Arrival must be after departure.");
+            return;
+        }
         try {
             const res = await fetch("/api/trips", {
                 method: "POST",
@@ -199,8 +217,10 @@ export default function BusManagementClient() {
                 }),
             });
             if (!res.ok) {
-                const text = await res.text().catch(() => "");
-                throw new Error(text || "Failed to create trip.");
+                const data = await res.json().catch(() => null);
+                throw new Error(
+                    data?.message || data?.error || "Failed to create trip.",
+                );
             }
             setMessage("Trip created.");
         } catch (err: any) {
@@ -250,9 +270,14 @@ export default function BusManagementClient() {
                     >
                         <option value="">Select bus</option>
                         {buses.map((bus) => (
-                            <option key={bus.id} value={bus.id}>
+                            <option
+                                key={bus.id}
+                                value={bus.id}
+                                disabled={bus.underMaintenance}
+                            >
                                 {bus.plateNumber}{" "}
                                 {bus.model ? `• ${bus.model}` : ""}
+                                {bus.underMaintenance ? " (under maintenance)" : ""}
                             </option>
                         ))}
                     </select>

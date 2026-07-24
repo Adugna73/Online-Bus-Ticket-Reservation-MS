@@ -6,13 +6,14 @@ import { getServerSession } from 'next-auth/next';
 const mockFindUnique = vi.fn()
 const mockUserCreate = vi.fn()
 const mockUserUpdate = vi.fn()
+const mockFindMany = vi.fn()
 vi.mock('../lib/prisma', () => ({
   prisma: {
     user: {
       findUnique: mockFindUnique,
       create: mockUserCreate,
       update: mockUserUpdate,
-      findMany: vi.fn()
+      findMany: mockFindMany
     },
   }
 }))
@@ -23,6 +24,7 @@ beforeEach(async () => {
   mockFindUnique.mockReset()
   mockUserCreate.mockReset()
   mockUserUpdate.mockReset()
+  mockFindMany.mockReset()
   const mod = await import('../app/api/users/route')
   POST = mod.POST
   GET = mod.GET
@@ -76,12 +78,12 @@ describe('POST /api/users', () => {
 describe('GET /api/users', () => {
   it('lists users', async () => {
     (getServerSession as any).mockResolvedValue({ user: { id: 'admin1', role: 'admin' } })
-    const mockFindMany = vi.fn().mockResolvedValue([]);
-    const prisma = await import('../lib/prisma');
-    (prisma.prisma.user.findMany as any) = mockFindMany;
+    mockFindUnique.mockResolvedValue({ id: 'admin1', role: 'ADMIN' })
+    mockFindMany.mockResolvedValue([{ id: 'u1', fullName: 'User One' }])
 
     const req = new Request('http://localhost/api/users?role=PASSENGER');
     const res: any = await GET(req as any);
+    expect(res.status).toBe(200);
     expect(mockFindMany).toHaveBeenCalled();
   });
 });

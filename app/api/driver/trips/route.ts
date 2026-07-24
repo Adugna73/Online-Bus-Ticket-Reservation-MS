@@ -18,10 +18,25 @@ export async function GET() {
 
     const buses = await prisma.bus.findMany({
       where: { driverId: session.user.id },
-      select: { id: true },
+      select: {
+        id: true,
+        plateNumber: true,
+        model: true,
+        level: true,
+        seatCount: true,
+        status: true,
+      },
     });
+    const assignedBuses = buses.map((b) => ({
+      id: b.id,
+      plateNumber: b.plateNumber,
+      model: b.model,
+      level: b.level,
+      seatCount: b.seatCount,
+      status: b.status,
+    }));
     if (!buses.length) {
-      return NextResponse.json({ buses: [], trips: [] });
+      return NextResponse.json({ buses: [], assignedBuses: [], trips: [] });
     }
     const busIds = buses.map((b) => b.id);
 
@@ -81,6 +96,7 @@ export async function GET() {
 
     return NextResponse.json({
       buses: busIds,
+      assignedBuses,
       trips: payload,
     });
   } catch (error) {

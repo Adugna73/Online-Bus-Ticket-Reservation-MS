@@ -26,6 +26,7 @@ const ROLE_LABELS: Record<string, string> = {
     STAFF: "Staff",
     GARAGE_OWNER: "Garage Owner",
     DRIVER: "Driver",
+    MECHANIC: "Mechanic",
     PASSENGER: "Passenger",
 };
 
@@ -34,12 +35,14 @@ const ROLE_COLORS: Record<string, string> = {
     STAFF: "bg-blue-100 text-blue-700 border-blue-300",
     GARAGE_OWNER: "bg-amber-100 text-amber-700 border-amber-300",
     DRIVER: "bg-sky-100 text-sky-700 border-sky-300",
+    MECHANIC: "bg-teal-100 text-teal-700 border-teal-300",
     PASSENGER: "bg-gray-100 text-gray-700 border-gray-300",
 };
 
 const ROLE_OPTIONS = [
     { value: "PASSENGER", label: "Passenger" },
     { value: "DRIVER", label: "Driver" },
+    { value: "MECHANIC", label: "Mechanic" },
     { value: "STAFF", label: "Staff" },
     { value: "GARAGE_OWNER", label: "Garage Owner" },
     { value: "ADMIN", label: "Admin" },

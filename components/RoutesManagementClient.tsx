@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Trash2 } from "lucide-react";
+import { Trash2, ArrowLeftRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { parseStationInput } from "@/lib/station-input";
 
 type StationOption = {
     id: string;
@@ -19,6 +18,7 @@ type RouteItem = {
     destination: StationOption | null;
     distanceKm?: number | null;
     defaultPrice?: number | null;
+    hasInverse?: boolean;
 };
 
 export default function RoutesManagementClient() {
@@ -33,6 +33,7 @@ export default function RoutesManagementClient() {
     const [destinationInput, setDestinationInput] = useState("");
     const [distanceKm, setDistanceKm] = useState("");
     const [defaultPrice, setDefaultPrice] = useState("");
+    const [createInverse, setCreateInverse] = useState(true);
 
     useEffect(() => {
         let active = true;
@@ -119,6 +120,38 @@ export default function RoutesManagementClient() {
         return byPartial?.id || "";
     };
 
+    const parseStationInput = (value: string) => {
+        const raw = value.trim();
+        if (!raw) return null;
+        const cleanName = (s: string) =>
+            s.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+        const cleanCode = (s: string) =>
+            s.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().trim();
+        // Accept "Name (CODE)", "Name [CODE]", or "Name {CODE}".
+        const patterns = [
+            /^(.*?)\s*\(([^)]+)\)\s*$/,
+            /^(.*?)\s*\[([^\]]+)\]\s*$/,
+            /^(.*?)\s*\{([^}]+)\}\s*$/,
+        ];
+        for (const p of patterns) {
+            const m = raw.match(p);
+            if (m) {
+                const name = cleanName(m[1]);
+                const code = cleanCode(m[2]);
+                if (name && code) return { name, code };
+            }
+        }
+        // Plain text: treat it as the station name and auto-generate a code
+        // from the first few alphanumeric characters so admin/staff can type a
+        // brand-new station without being restricted to the dropdown.
+        const name = cleanName(raw);
+        if (!name) return null;
+        const code =
+            name.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase() ||
+            "STN";
+        return { name, code };
+    };
+
     const createStationIfMissing = async (value: string) => {
         const parsed = parseStationInput(value);
         if (!parsed) return "";
@@ -183,9 +216,9 @@ export default function RoutesManagementClient() {
                 .filter(Boolean)
                 .join(" and ");
             if (!originId || !destinationId) {
-                const helper =
-                    "You can use an existing station or type a new one like 'Nekemte (NKMT)' or just 'Nekemte'.";
-                setError(`Please select ${missing}. ${helper}`);
+                setError(
+                    `Select ${missing} — pick an existing station or type "Nekemte (NKT)".`,
+                );
                 return;
             }
             console.warn("[routes:create] missing", {
@@ -210,6 +243,7 @@ export default function RoutesManagementClient() {
                     defaultPrice: defaultPrice
                         ? Number(defaultPrice)
                         : undefined,
+                    createInverse,
                 }),
             });
             if (!res.ok) {
@@ -217,11 +251,18 @@ export default function RoutesManagementClient() {
                 console.error("[routes:create] failed", res.status, text);
                 throw new Error(text || "Failed to create route.");
             }
+            const created = (await res.json().catch(() => ({}))) as {
+                inverseId?: string;
+            };
             setOriginInput("");
             setDestinationInput("");
             setDistanceKm("");
             setDefaultPrice("");
-            setMessage("Route created.");
+            setMessage(
+                created.inverseId
+                    ? "Route and return route created."
+                    : "Route created.",
+            );
             await refreshRoutes();
         } catch (err: any) {
             setError(err?.message || "Failed to create route.");
@@ -276,6 +317,33 @@ export default function RoutesManagementClient() {
             await refreshRoutes();
         } catch (err: any) {
             setError(err?.message || "Failed to delete route.");
+        }
+    };
+
+    const handleAddInverse = async (route: RouteItem) => {
+        setError(null);
+        setMessage(null);
+        try {
+            const res = await fetch("/api/routes", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ inverseOfRouteId: route.id }),
+            });
+            if (!res.ok) {
+                const text = await res.text().catch(() => "");
+                throw new Error(text || "Failed to add return route.");
+            }
+            const data = (await res.json().catch(() => ({}))) as {
+                inverseCreated?: boolean;
+            };
+            setMessage(
+                data.inverseCreated
+                    ? "Return route added."
+                    : "Return route already exists.",
+            );
+            await refreshRoutes();
+        } catch (err: any) {
+            setError(err?.message || "Failed to add return route.");
         }
     };
 
@@ -344,6 +412,15 @@ export default function RoutesManagementClient() {
                     onChange={(e) => setDefaultPrice(e.target.value)}
                 />
                 </div>
+                <label className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                    <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={createInverse}
+                        onChange={(e) => setCreateInverse(e.target.checked)}
+                    />
+                    Also create return route (inverse)
+                </label>
                 <Button className="mt-3" onClick={handleCreateRoute}>
                     Create Route
                 </Button>
@@ -359,6 +436,7 @@ export default function RoutesManagementClient() {
                         resolveStationId={resolveStationId}
                         onSave={handleUpdate}
                         onDelete={handleDelete}
+                        onAddInverse={handleAddInverse}
                     />
                 ))}
             </div>
@@ -373,6 +451,7 @@ function RouteCard({
     resolveStationId,
     onSave,
     onDelete,
+    onAddInverse,
 }: {
     route: RouteItem;
     stations: StationOption[];
@@ -380,6 +459,7 @@ function RouteCard({
     resolveStationId: (value: string) => string;
     onSave: (route: RouteItem) => void;
     onDelete: (id: string) => void;
+    onAddInverse: (route: RouteItem) => void;
 }) {
     const [draft, setDraft] = useState<RouteItem>({ ...route });
     const [originText, setOriginText] = useState(
@@ -403,13 +483,28 @@ function RouteCard({
                         ? `${draft.destination.name} (${draft.destination.code})`
                         : "-"}
                 </div>
-                <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => onDelete(draft.id)}
-                >
-                    <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                    <Button
+                        size="icon"
+                        variant="ghost"
+                        title={
+                            route.hasInverse
+                                ? "Return route already exists"
+                                : "Add return route (inverse)"
+                        }
+                        disabled={route.hasInverse}
+                        onClick={() => onAddInverse(draft)}
+                    >
+                        <ArrowLeftRight className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => onDelete(draft.id)}
+                    >
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                </div>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <input

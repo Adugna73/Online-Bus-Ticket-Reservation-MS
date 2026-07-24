@@ -17,7 +17,46 @@ import { PrismaPg } from "@prisma/adapter-pg";
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
+async function resetGapData() {
+  // Clear gap-feature demo data in dependency order (children first) so the
+  // seed is idempotent and can be re-run safely. Base bus/trip/booking/user
+  // data from seed-bus.ts is left untouched.
+  await prisma.chatMessage.deleteMany();
+  await prisma.dispute.deleteMany();
+  await prisma.supportTicket.deleteMany();
+  await prisma.transactionLog.deleteMany();
+  await prisma.escrow.deleteMany();
+  await prisma.refund.deleteMany();
+  await prisma.seatHold.deleteMany();
+  await prisma.seatEvent.deleteMany();
+  await prisma.userBadge.deleteMany();
+  await prisma.referral.deleteMany();
+  await prisma.badge.deleteMany();
+  await prisma.userLoyalty.deleteMany();
+  await prisma.review.deleteMany();
+  await prisma.travelBuddy.deleteMany();
+  await prisma.safetyReport.deleteMany();
+  await prisma.travelInsurance.deleteMany();
+  await prisma.cargoBooking.deleteMany();
+  await prisma.groupBooking.deleteMany();
+  await prisma.ngoBulkBooking.deleteMany();
+  await prisma.offlineTicket.deleteMany();
+  await prisma.busLocation.deleteMany();
+  await prisma.sosAlert.deleteMany();
+  await prisma.analyticsEvent.deleteMany();
+  await prisma.routeHeatmap.deleteMany();
+  await prisma.dynamicPricingRule.deleteMany();
+  await prisma.operatorFraudFlag.deleteMany();
+  await prisma.agentBookingChannel.deleteMany();
+  await prisma.channelSession.deleteMany();
+  await prisma.hotelPartner.deleteMany();
+  await prisma.corporateAccount.deleteMany();
+  await prisma.governmentReport.deleteMany();
+}
+
 async function main() {
+  await resetGapData();
+
   const buses = await prisma.bus.findMany({ take: 14 });
   const trips = await prisma.trip.findMany({ take: 10, include: { bus: true, route: { include: { originStation: true, destinationStation: true } } } });
   const users = await prisma.user.findMany();

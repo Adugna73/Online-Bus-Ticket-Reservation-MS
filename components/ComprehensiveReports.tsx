@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DollarSign, Users, TrendingUp, Calendar, Download } from "lucide-react";
+import { DollarSign, Users, TrendingUp, Calendar, Download, Archive, Wrench } from "lucide-react";
 
 type ReportRow = {
     bookingRef: string;
@@ -64,6 +64,8 @@ export default function ComprehensiveReports() {
     const [start, setStart] = useState("");
     const [end, setEnd] = useState("");
     const [search, setSearch] = useState("");
+    const [archivedMaint, setArchivedMaint] = useState<any[]>([]);
+    const [maintLoading, setMaintLoading] = useState(false);
 
     const loadReport = async () => {
         try {
@@ -86,6 +88,82 @@ export default function ComprehensiveReports() {
     useEffect(() => {
         loadReport();
     }, []);
+
+    const loadArchivedMaint = async () => {
+        try {
+            setMaintLoading(true);
+            const res = await fetch("/api/vehicle-maintenance", { credentials: "include" });
+            if (!res.ok) return;
+            const all = await res.json();
+            setArchivedMaint(
+                (all as any[]).filter((m) => m.status === "COMPLETED" || m.status === "CANCELLED"),
+            );
+        } catch {
+            // ignore
+        } finally {
+            setMaintLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadArchivedMaint();
+    }, []);
+
+    const handleExportMaintCSV = () => {
+        if (!archivedMaint.length) return;
+        const headers = [
+            "Bus Plate",
+            "Bus Model",
+            "Status",
+            "Garage",
+            "Mechanic",
+            "Parts",
+            "Description",
+            "Mechanic Notes",
+            "Scheduled Date",
+            "Completed Date",
+            "Estimated Cost (ETB)",
+            "Actual Cost (ETB)",
+            "Telebirr Ref",
+            "Telebirr Amount",
+            "Driver",
+            "Created At",
+        ];
+        const escape = (v: any) => {
+            const s = v == null ? "" : String(v);
+            return `"${s.replace(/"/g, '""')}"`;
+        };
+        const lines = [headers.join(",")];
+        for (const m of archivedMaint) {
+            lines.push(
+                [
+                    escape(m.bus?.plateNumber || ""),
+                    escape(m.bus?.model || ""),
+                    escape(m.status),
+                    escape(m.garage?.name || ""),
+                    escape(m.assignedMechanic?.name || ""),
+                    escape(m.partsNeedingMaintenance || ""),
+                    escape(m.description || ""),
+                    escape(m.mechanicNotes || ""),
+                    escape(formatDate(m.scheduledDate)),
+                    escape(formatDate(m.completedDate)),
+                    m.estimatedCost != null ? m.estimatedCost : "",
+                    m.actualCost != null ? m.actualCost : "",
+                    escape(m.telebirrRef || ""),
+                    m.telebirrAmount != null ? m.telebirrAmount : "",
+                    escape(m.driver?.fullName || m.bus?.driverName || ""),
+                    escape(formatDate(m.createdAt)),
+                ].join(","),
+            );
+        }
+        const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `maintenance-archive-${new Date().toISOString().split("T")[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
 
     const filteredRows = (data?.rows || []).filter((r) => {
         if (!search) return true;
@@ -276,8 +354,91 @@ export default function ComprehensiveReports() {
                 </div>
             )}
 
-            <div className="overflow-x-auto rounded border bg-card">
-                <table className="min-w-full text-xs md:text-sm">
+            <div className="rounded border bg-card p-4">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <Archive className="h-4 w-4" />
+                    Maintenance Archive
+                    <span className="rounded bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                        {archivedMaint.length} records
+                    </span>
+                    {archivedMaint.length > 0 && (
+                        <button
+                            onClick={handleExportMaintCSV}
+                            className="ml-auto inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+                        >
+                            <Download className="h-3.5 w-3.5" /> Export CSV
+                        </button>
+                    )}
+                </h3>
+                {maintLoading ? (
+                    <div className="text-center text-muted-foreground text-sm py-4">
+                        Loading archived maintenance…
+                    </div>
+                ) : archivedMaint.length === 0 ? (
+                    <div className="text-center text-muted-foreground text-sm py-4">
+                        No archived maintenance records.
+                    </div>
+                ) : (
+                    <div className="w-full overflow-x-auto">
+                        <table className="w-full min-w-[800px] text-xs md:text-sm">
+                            <thead className="bg-muted/50">
+                                <tr>
+                                    <th className="px-2 py-2 text-left font-medium">Bus</th>
+                                    <th className="px-2 py-2 text-left font-medium">Status</th>
+                                    <th className="px-2 py-2 text-left font-medium">Garage</th>
+                                    <th className="px-2 py-2 text-left font-medium">Mechanic</th>
+                                    <th className="px-2 py-2 text-left font-medium">Parts</th>
+                                    <th className="px-2 py-2 text-left font-medium">Completed</th>
+                                    <th className="px-2 py-2 text-right font-medium">Est. ETB</th>
+                                    <th className="px-2 py-2 text-right font-medium">Actual ETB</th>
+                                    <th className="px-2 py-2 text-left font-medium">Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {archivedMaint.map((m) => (
+                                    <tr key={m.id} className="border-t hover:bg-muted/40">
+                                        <td className="px-2 py-2 align-top">
+                                            {m.bus?.plateNumber || "—"}
+                                            {m.bus?.model && (
+                                                <span className="text-xs text-muted-foreground block">
+                                                    {m.bus.model}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-2 py-2 align-top">
+                                            <span
+                                                className={`rounded px-1.5 py-0.5 text-xs ${
+                                                    m.status === "COMPLETED"
+                                                        ? "bg-green-100 text-green-700"
+                                                        : "bg-red-100 text-red-700"
+                                                }`}
+                                            >
+                                                {m.status}
+                                            </span>
+                                        </td>
+                                        <td className="px-2 py-2 align-top">{m.garage?.name || "—"}</td>
+                                        <td className="px-2 py-2 align-top">{m.assignedMechanic?.name || "—"}</td>
+                                        <td className="px-2 py-2 align-top">{m.partsNeedingMaintenance || "—"}</td>
+                                        <td className="px-2 py-2 align-top whitespace-nowrap">{formatDate(m.completedDate)}</td>
+                                        <td className="px-2 py-2 align-top text-right">
+                                            {m.estimatedCost != null ? m.estimatedCost.toLocaleString() : "—"}
+                                        </td>
+                                        <td className="px-2 py-2 align-top text-right">
+                                            {m.actualCost != null ? m.actualCost.toLocaleString() : "—"}
+                                        </td>
+                                        <td className="px-2 py-2 align-top max-w-[160px] truncate">
+                                            {m.mechanicNotes || m.description || "—"}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            <div className="w-full overflow-x-auto rounded border bg-card">
+                <table className="w-full min-w-[900px] text-xs md:text-sm">
                     <thead className="bg-muted/50">
                         <tr>
                             <th className="px-2 py-2 text-left font-medium">Booking Ref</th>

@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { Trash2, Wrench, Phone, Mail, MapPin, Plus, Calendar, CheckCircle, Clock, User, AlertTriangle } from "lucide-react";
+import { Trash2, Wrench, Phone, Mail, MapPin, Plus, Calendar, CheckCircle, Clock, User, AlertTriangle, CheckCircle2, XCircle, UserCog, Ban, FileText, Archive, Download } from "lucide-react";
+
+const ACTION_NEEDED_STATUSES = ["COST_PENDING", "AWAITING_PAYMENT", "DRIVER_ACCEPTED", "BUS_READY"];
+const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED"];
 
 type Garage = {
     id: string;
@@ -106,6 +109,7 @@ export default function GarageManagement() {
     const [garages, setGarages] = useState<Garage[]>([]);
     const [buses, setBuses] = useState<Bus[]>([]);
     const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
+    const [mechanics, setMechanics] = useState<{ id: string; name: string; position: string; garageId: string }[]>([]);
     const [garageOwners, setGarageOwners] = useState<{ id: string; fullName: string; email: string }[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -113,6 +117,8 @@ export default function GarageManagement() {
     const [activeTab, setActiveTab] = useState<"garages" | "maintenance">(
         "maintenance",
     );
+    const [maintSubTab, setMaintSubTab] = useState<"active" | "archived">("active");
+    const [reassignId, setReassignId] = useState<string | null>(null);
 
     const [newGarage, setNewGarage] = useState({
         name: "",
@@ -147,6 +153,16 @@ export default function GarageManagement() {
             if (busesRes.ok) setBuses(await busesRes.json());
             if (maintRes.ok) setMaintenances(await maintRes.json());
             if (ownersRes.ok) setGarageOwners(await ownersRes.json());
+            if (canSeeGarageTab && garages.length > 0) {
+                const mechResults = await Promise.all(
+                    garages.map((g) =>
+                        fetch(`/api/mechanics?garageId=${g.id}`, { credentials: "include" })
+                            .then((r) => (r.ok ? r.json() : []))
+                            .catch(() => []),
+                    ),
+                );
+                setMechanics(mechResults.flat());
+            }
         } catch (err: any) {
             setError(err?.message || "Failed to load data");
         } finally {
@@ -156,6 +172,7 @@ export default function GarageManagement() {
 
     useEffect(() => {
         loadData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleCreateGarage = async () => {
@@ -270,6 +287,84 @@ export default function GarageManagement() {
         }
     };
 
+    const handleReassign = async (id: string, mechanicId: string) => {
+        try {
+            await fetch("/api/vehicle-maintenance", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, assignedMechanicId: mechanicId || null }),
+            });
+            setReassignId(null);
+            await loadData();
+        } catch (err: any) {
+            setError(err?.message || "Failed to reassign mechanic");
+        }
+    };
+
+    const activeMaintenances = maintenances.filter((m) => !TERMINAL_STATUSES.includes(m.status));
+    const archivedMaintenances = maintenances.filter((m) => TERMINAL_STATUSES.includes(m.status));
+    const actionNeeded = activeMaintenances.filter((m) => ACTION_NEEDED_STATUSES.includes(m.status));
+
+    const handleExportCSV = () => {
+        const headers = [
+            "Bus Plate",
+            "Bus Model",
+            "Status",
+            "Garage",
+            "Mechanic",
+            "Parts",
+            "Description",
+            "Mechanic Notes",
+            "Scheduled Date",
+            "Completed Date",
+            "Owner Drop-off",
+            "Owner Pickup",
+            "Estimated Cost (ETB)",
+            "Actual Cost (ETB)",
+            "Telebirr Ref",
+            "Telebirr Amount",
+            "Driver",
+            "Created At",
+        ];
+        const escape = (v: any) => {
+            const s = v == null ? "" : String(v);
+            return `"${s.replace(/"/g, '""')}"`;
+        };
+        const lines = [headers.join(",")];
+        for (const m of maintenances) {
+            const bus = buses.find((b) => b.id === m.busId);
+            lines.push(
+                [
+                    escape(m.bus?.plateNumber || bus?.plateNumber || ""),
+                    escape(m.bus?.model || ""),
+                    escape(m.status),
+                    escape(m.garage?.name || ""),
+                    escape((m as any).assignedMechanic?.name || ""),
+                    escape(m.partsNeedingMaintenance || ""),
+                    escape(m.description || ""),
+                    escape(m.mechanicNotes || ""),
+                    escape(formatDate(m.scheduledDate)),
+                    escape(formatDate(m.completedDate)),
+                    escape(formatDate(m.ownerDropoffDate)),
+                    escape(formatDate(m.ownerPickupDate)),
+                    m.estimatedCost != null ? m.estimatedCost : "",
+                    m.actualCost != null ? m.actualCost : "",
+                    escape((m as any).telebirrRef || ""),
+                    (m as any).telebirrAmount != null ? (m as any).telebirrAmount : "",
+                    escape((m as any).driver?.fullName || m.bus?.driverName || ""),
+                    escape(formatDate(m.createdAt)),
+                ].join(","),
+            );
+        }
+        const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `maintenance-export-${new Date().toISOString().split("T")[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     if (loading) {
         return (
             <div className="rounded border bg-card p-6 text-center text-muted-foreground text-sm">
@@ -288,6 +383,34 @@ export default function GarageManagement() {
             {message && (
                 <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
                     {message}
+                </div>
+            )}
+
+            {canSeeGarageTab && actionNeeded.length > 0 && (
+                <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="h-5 w-5 text-amber-600" />
+                        <h3 className="text-sm font-semibold text-amber-800">
+                            Action Needed ({actionNeeded.length})
+                        </h3>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {actionNeeded.slice(0, 8).map((m) => (
+                            <span
+                                key={m.id}
+                                className={`rounded border px-2 py-1 text-xs font-medium ${
+                                    STATUS_COLORS[m.status] || "bg-gray-100 text-gray-700 border-gray-300"
+                                }`}
+                            >
+                                {m.bus?.plateNumber || "Unknown"} — {m.status.replace(/_/g, " ")}
+                            </span>
+                        ))}
+                        {actionNeeded.length > 8 && (
+                            <span className="text-xs text-amber-700 self-center">
+                                +{actionNeeded.length - 8} more
+                            </span>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -496,11 +619,14 @@ export default function GarageManagement() {
 
             {activeTab === "maintenance" && (
                 <>
-                    <div className="rounded border bg-card p-4">
-                        <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <div className="rounded border bg-card p-6">
+                        <h3 className="text-sm font-semibold flex items-center gap-2 mb-1">
                             <Plus className="h-4 w-4" /> Schedule Vehicle Maintenance
                         </h3>
-                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <p className="text-xs text-muted-foreground mb-4">
+                            Select a bus and garage, then fill in the maintenance details below.
+                        </p>
+                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                             <select
                                 className="h-10 w-full rounded border px-3 text-sm"
                                 value={newMaintenance.busId}
@@ -558,29 +684,34 @@ export default function GarageManagement() {
                                     })
                                 }
                             />
-                            <input
-                                type="date"
-                                className="h-10 w-full rounded border px-3 text-sm"
-                                value={newMaintenance.scheduledDate}
-                                onChange={(e) =>
-                                    setNewMaintenance({
-                                        ...newMaintenance,
-                                        scheduledDate: e.target.value,
-                                    })
-                                }
-                            />
-                            <input
-                                type="date"
-                                className="h-10 w-full rounded border px-3 text-sm"
-                                placeholder="Owner drop-off date"
-                                value={newMaintenance.ownerDropoffDate}
-                                onChange={(e) =>
-                                    setNewMaintenance({
-                                        ...newMaintenance,
-                                        ownerDropoffDate: e.target.value,
-                                    })
-                                }
-                            />
+                            <div>
+                                <label className="block text-xs text-muted-foreground mb-1">Scheduled date</label>
+                                <input
+                                    type="date"
+                                    className="h-10 w-full rounded border px-3 text-sm"
+                                    value={newMaintenance.scheduledDate}
+                                    onChange={(e) =>
+                                        setNewMaintenance({
+                                            ...newMaintenance,
+                                            scheduledDate: e.target.value,
+                                        })
+                                    }
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-muted-foreground mb-1">Owner drop-off date</label>
+                                <input
+                                    type="date"
+                                    className="h-10 w-full rounded border px-3 text-sm"
+                                    value={newMaintenance.ownerDropoffDate}
+                                    onChange={(e) =>
+                                        setNewMaintenance({
+                                            ...newMaintenance,
+                                            ownerDropoffDate: e.target.value,
+                                        })
+                                    }
+                                />
+                            </div>
                             <input
                                 className="h-10 w-full rounded border px-3 text-sm"
                                 placeholder="Estimated cost (ETB)"
@@ -593,18 +724,131 @@ export default function GarageManagement() {
                                 }
                             />
                         </div>
-                        <Button className="mt-3" onClick={handleCreateMaintenance}>
+                        <Button className="mt-4 w-full md:w-auto" onClick={handleCreateMaintenance}>
                             Schedule Maintenance
                         </Button>
                     </div>
 
-                    {maintenances.length === 0 ? (
+                    <div className="flex gap-2 border-b mb-4">
+                        <button
+                            className={`px-4 py-2 text-sm font-medium border-b-2 ${
+                                maintSubTab === "active"
+                                    ? "border-primary text-primary"
+                                    : "border-transparent text-muted-foreground"
+                            }`}
+                            onClick={() => setMaintSubTab("active")}
+                        >
+                            Active ({activeMaintenances.length})
+                        </button>
+                        <button
+                            className={`px-4 py-2 text-sm font-medium border-b-2 ${
+                                maintSubTab === "archived"
+                                    ? "border-primary text-primary"
+                                    : "border-transparent text-muted-foreground"
+                            }`}
+                            onClick={() => setMaintSubTab("archived")}
+                        >
+                            <Archive className="inline h-3.5 w-3.5 mr-1" />
+                            Archived ({archivedMaintenances.length})
+                        </button>
+                    </div>
+
+                    {maintSubTab === "archived" ? (
+                        archivedMaintenances.length === 0 ? (
+                            <div className="text-center text-muted-foreground text-sm py-8">
+                                No archived maintenance records.
+                            </div>
+                        ) : (
+                            <>
+                            <div className="flex justify-end mb-3">
+                                <button
+                                    onClick={handleExportCSV}
+                                    className="inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-sm font-medium hover:bg-muted [background:var(--button-background)] [color:var(--button-foreground)]"
+                                >
+                                    <Download className="h-4 w-4" /> Export CSV
+                                </button>
+                            </div>
+                            <div className="w-full overflow-x-auto rounded-lg border">
+                                <table className="w-full min-w-[800px] text-sm">
+                                    <thead className="bg-muted/50 border-b">
+                                        <tr className="text-left">
+                                            <th className="px-3 py-2 font-semibold">Bus</th>
+                                            <th className="px-3 py-2 font-semibold">Status</th>
+                                            <th className="px-3 py-2 font-semibold">Garage</th>
+                                            <th className="px-3 py-2 font-semibold">Mechanic</th>
+                                            <th className="px-3 py-2 font-semibold">Parts</th>
+                                            <th className="px-3 py-2 font-semibold">Completed</th>
+                                            <th className="px-3 py-2 font-semibold">Est. ETB</th>
+                                            <th className="px-3 py-2 font-semibold">Actual ETB</th>
+                                            <th className="px-3 py-2 font-semibold">Notes</th>
+                                            <th className="px-3 py-2 font-semibold"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {archivedMaintenances.map((m) => {
+                                            const bus = buses.find((b) => b.id === m.busId);
+                                            return (
+                                                <tr key={m.id} className="border-b last:border-0 hover:bg-muted/30">
+                                                    <td className="px-3 py-2">
+                                                        <div className="font-medium">
+                                                            {m.bus?.plateNumber || bus?.plateNumber || "Unknown"}
+                                                        </div>
+                                                        {m.bus?.model && (
+                                                            <div className="text-xs text-muted-foreground">
+                                                                {m.bus.model}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <span
+                                                            className={`rounded border px-2 py-0.5 text-xs font-medium ${
+                                                                STATUS_COLORS[m.status] ||
+                                                                "bg-gray-100 text-gray-700 border-gray-300"
+                                                            }`}
+                                                        >
+                                                            {m.status.replace(/_/g, " ")}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2">{m.garage?.name || "Unknown"}</td>
+                                                    <td className="px-3 py-2 text-xs">
+                                                        {(m as any).assignedMechanic?.name || "—"}
+                                                    </td>
+                                                    <td className="px-3 py-2">{m.partsNeedingMaintenance || "—"}</td>
+                                                    <td className="px-3 py-2 whitespace-nowrap">
+                                                        {formatDate(m.completedDate)}
+                                                    </td>
+                                                    <td className="px-3 py-2 whitespace-nowrap">
+                                                        {m.estimatedCost != null ? m.estimatedCost.toLocaleString() : "—"}
+                                                    </td>
+                                                    <td className="px-3 py-2 whitespace-nowrap">
+                                                        {m.actualCost != null ? m.actualCost.toLocaleString() : "—"}
+                                                    </td>
+                                                    <td className="px-3 py-2 max-w-[160px] truncate">
+                                                        {m.mechanicNotes || m.description || "—"}
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <button
+                                                            onClick={() => handleDeleteMaintenance(m.id)}
+                                                            className="text-red-500 hover:text-red-700"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            </>
+                        )
+                    ) : activeMaintenances.length === 0 ? (
                         <div className="text-center text-muted-foreground text-sm py-8">
-                            No maintenance records found.
+                            No active maintenance records.
                         </div>
                     ) : isAdmin ? (
-                        <div className="overflow-x-auto rounded-lg border">
-                            <table className="w-full text-sm">
+                        <div className="w-full overflow-x-auto rounded-lg border">
+                            <table className="w-full min-w-[1200px] text-sm">
                                 <thead className="bg-muted/50 border-b">
                                     <tr className="text-left">
                                         <th className="px-3 py-2 font-semibold">Bus</th>
@@ -623,7 +867,7 @@ export default function GarageManagement() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {maintenances.map((m) => {
+                                    {activeMaintenances.map((m) => {
                                         const countdown = daysUntil(m.scheduledDate);
                                         const bus = buses.find((b) => b.id === m.busId);
                                         return (
@@ -698,147 +942,155 @@ export default function GarageManagement() {
                                                     {m.mechanicNotes || m.description || "—"}
                                                 </td>
                                                 <td className="px-3 py-2">
-                                                    <div className="flex flex-wrap gap-1">
-                                                        <select
-                                                            className="h-7 rounded border px-1 text-xs"
-                                                            value={m.status}
-                                                            onChange={(e) =>
-                                                                handleUpdateMaintenance(m.id, {
-                                                                    status: e.target.value,
-                                                                    completedDate:
-                                                                        e.target.value === "COMPLETED"
-                                                                            ? new Date().toISOString()
-                                                                            : undefined,
-                                                                })
-                                                            }
-                                                        >
-                                                            <option value="REQUESTED">Requested</option>
-                                                            <option value="ACCEPTED">Accepted</option>
-                                                            <option value="NOT_FIXABLE">Not Fixable</option>
-                                                            <option value="COST_PENDING">Cost Pending</option>
-                                                            <option value="COST_APPROVED">Cost Approved</option>
-                                                            <option value="SCHEDULED">Scheduled</option>
-                                                            <option value="IN_PROGRESS">In Progress</option>
-                                                            <option value="PARTS_ORDERED">Parts Ordered</option>
-                                                            <option value="REPAIR_DONE">Repair Done</option>
-                                                            <option value="AWAITING_PAYMENT">Awaiting Payment</option>
-                                                            <option value="PAID">Paid</option>
-                                                            <option value="BUS_READY">Bus Ready</option>
-                                                            <option value="DRIVER_ACCEPTED">Driver Accepted</option>
-                                                            <option value="COMPLETED">Completed</option>
-                                                            <option value="CANCELLED">Cancelled</option>
-                                                        </select>
+                                                    <div className="flex flex-col gap-1 min-w-[120px]">
+                                                        {m.status === "REQUESTED" && (
+                                                            <button
+                                                                className="h-7 rounded bg-blue-100 px-2 text-[11px] font-medium text-blue-700 hover:bg-blue-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "ACCEPTED", acceptedAt: new Date().toISOString() })}
+                                                            >
+                                                                <CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Accept
+                                                            </button>
+                                                        )}
+                                                        {m.status === "ACCEPTED" && (
+                                                            <button
+                                                                className="h-7 rounded bg-amber-100 px-2 text-[11px] font-medium text-amber-700 hover:bg-amber-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "COST_PENDING" })}
+                                                            >
+                                                                Submit Cost
+                                                            </button>
+                                                        )}
+                                                        {m.status === "COST_PENDING" && (
+                                                            <button
+                                                                className="h-7 rounded bg-emerald-100 px-2 text-[11px] font-medium text-emerald-700 hover:bg-emerald-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "COST_APPROVED" })}
+                                                            >
+                                                                <CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Approve Cost
+                                                            </button>
+                                                        )}
+                                                        {m.status === "COST_APPROVED" && (
+                                                            <button
+                                                                className="h-7 rounded bg-blue-100 px-2 text-[11px] font-medium text-blue-700 hover:bg-blue-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "SCHEDULED" })}
+                                                            >
+                                                                Schedule
+                                                            </button>
+                                                        )}
+                                                        {m.status === "SCHEDULED" && (
+                                                            <button
+                                                                className="h-7 rounded bg-blue-100 px-2 text-[11px] font-medium text-blue-700 hover:bg-blue-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "IN_PROGRESS" })}
+                                                            >
+                                                                Start Work
+                                                            </button>
+                                                        )}
+                                                        {m.status === "IN_PROGRESS" && (
+                                                            <button
+                                                                className="h-7 rounded bg-teal-100 px-2 text-[11px] font-medium text-teal-700 hover:bg-teal-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "REPAIR_DONE" })}
+                                                            >
+                                                                Repair Done
+                                                            </button>
+                                                        )}
+                                                        {m.status === "PARTS_ORDERED" && (
+                                                            <button
+                                                                className="h-7 rounded bg-blue-100 px-2 text-[11px] font-medium text-blue-700 hover:bg-blue-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "IN_PROGRESS" })}
+                                                            >
+                                                                Start Repair
+                                                            </button>
+                                                        )}
+                                                        {m.status === "REPAIR_DONE" && (
+                                                            <button
+                                                                className="h-7 rounded bg-violet-100 px-2 text-[11px] font-medium text-violet-700 hover:bg-violet-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "AWAITING_PAYMENT" })}
+                                                            >
+                                                                Request Payment
+                                                            </button>
+                                                        )}
+                                                        {m.status === "AWAITING_PAYMENT" && (
+                                                            <button
+                                                                className="h-7 rounded bg-violet-100 px-2 text-[11px] font-medium text-violet-700 hover:bg-violet-200"
+                                                                onClick={() => {
+                                                                    const targetAmount = m.actualCost || m.estimatedCost || 0;
+                                                                    const telebirrRef = prompt(`Enter Telebirr reference number:\nAmount to pay: ${targetAmount.toLocaleString()} ETB`);
+                                                                    if (telebirrRef) {
+                                                                        const telebirrAmount = prompt(`Confirm Telebirr payment amount:`);
+                                                                        if (telebirrAmount && Number(telebirrAmount) >= targetAmount) {
+                                                                            handleUpdateMaintenance(m.id, { status: "PAID", telebirrRef, telebirrAmount: Number(telebirrAmount), paymentTxRef: telebirrRef });
+                                                                        } else if (telebirrAmount) {
+                                                                            alert(`Amount must be at least ${targetAmount.toLocaleString()} ETB`);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                            >
+                                                                Pay via Telebirr
+                                                            </button>
+                                                        )}
+                                                        {m.status === "PAID" && (
+                                                            <button
+                                                                className="h-7 rounded bg-sky-100 px-2 text-[11px] font-medium text-sky-700 hover:bg-sky-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "BUS_READY" })}
+                                                            >
+                                                                Bus Ready
+                                                            </button>
+                                                        )}
+                                                        {m.status === "BUS_READY" && (
+                                                            <span className="text-[11px] text-amber-600 italic flex items-center gap-1">
+                                                                <Clock className="inline h-3.5 w-3.5" />Waiting for driver to accept
+                                                            </span>
+                                                        )}
+                                                        {m.status === "DRIVER_ACCEPTED" && (
+                                                            <button
+                                                                className="h-7 rounded bg-emerald-100 px-2 text-[11px] font-medium text-emerald-700 hover:bg-emerald-200"
+                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "COMPLETED", adminConfirmedAt: new Date().toISOString(), completedDate: new Date().toISOString() })}
+                                                            >
+                                                                <CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Confirm Handover
+                                                            </button>
+                                                        )}
+                                                        {m.status === "NOT_FIXABLE" && (
+                                                            <button
+                                                                className="h-7 rounded bg-red-100 px-2 text-[11px] font-medium text-red-700 hover:bg-red-200"
+                                                                onClick={() => {
+                                                                    if (confirm("Cancel this maintenance record?")) handleUpdateMaintenance(m.id, { status: "CANCELLED" });
+                                                                }}
+                                                            >
+                                                                <Ban className="inline h-3.5 w-3.5 mr-1" />Cancel
+                                                            </button>
+                                                        )}
+                                                        {(m.status === "COMPLETED" || m.status === "CANCELLED") && (
+                                                            <span className="text-xs text-muted-foreground italic">No action</span>
+                                                        )}
+                                                        <div className="flex items-center gap-1">
+                                                            <input
+                                                                type="date"
+                                                                className="h-6 rounded border px-1 text-[10px]"
+                                                                value={m.ownerPickupDate ? m.ownerPickupDate.split("T")[0] : ""}
+                                                                onChange={(e) => handleUpdateMaintenance(m.id, { ownerPickupDate: e.target.value || null })}
+                                                                title="Owner pickup date"
+                                                            />
+                                                            <input
+                                                                className="h-6 w-16 rounded border px-1 text-[10px]"
+                                                                placeholder="ETB"
+                                                                type="number"
+                                                                defaultValue={m.actualCost || ""}
+                                                                onBlur={(e) => handleUpdateMaintenance(m.id, { actualCost: e.target.value ? Number(e.target.value) : null })}
+                                                            />
+                                                        </div>
                                                         {(m as any).rejectionReason && (
-                                                            <div className="text-[10px] text-red-600 mt-1 max-w-[100px] truncate">
+                                                            <div className="text-[10px] text-red-600 max-w-[160px] truncate">
                                                                 {(m as any).rejectionReason}
                                                             </div>
                                                         )}
-                                                        {m.status === "COST_PENDING" && isAdmin && (
-                                                            <div className="flex gap-1 mt-1">
-                                                                <button
-                                                                    className="h-6 rounded bg-emerald-100 px-1.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-200"
-                                                                    onClick={() => handleUpdateMaintenance(m.id, { status: "COST_APPROVED" })}
-                                                                >
-                                                                    Approve
-                                                                </button>
-                                                                <button
-                                                                    className="h-6 rounded bg-red-100 px-1.5 text-[10px] font-medium text-red-700 hover:bg-red-200"
-                                                                    onClick={() => {
-                                                                        const reason = prompt("Rejection reason:");
-                                                                        if (reason) handleUpdateMaintenance(m.id, { status: "ACCEPTED", costRejectedReason: reason });
-                                                                    }}
-                                                                >
-                                                                    Reject
-                                                                </button>
+                                                        {(m as any).costRejectedReason && (
+                                                            <div className="text-[10px] text-red-600 max-w-[160px] truncate">
+                                                                Cost rejected: {(m as any).costRejectedReason}
                                                             </div>
                                                         )}
-                                                        {m.status === "AWAITING_PAYMENT" && isAdmin && (
-                                                            <div className="flex gap-1 mt-1">
-                                                                <button
-                                                                    className="h-6 rounded bg-violet-100 px-1.5 text-[10px] font-medium text-violet-700 hover:bg-violet-200"
-                                                                    onClick={() => {
-                                                                        const targetAmount = m.actualCost || m.estimatedCost || 0;
-                                                                        const telebirrRef = prompt(`Enter Telebirr reference number:\nAmount to pay: ${targetAmount.toLocaleString()} ETB`);
-                                                                        if (telebirrRef) {
-                                                                            const telebirrAmount = prompt(`Confirm Telebirr payment amount:`);
-                                                                            if (telebirrAmount && Number(telebirrAmount) >= targetAmount) {
-                                                                                handleUpdateMaintenance(m.id, { status: "PAID", telebirrRef, telebirrAmount: Number(telebirrAmount), paymentTxRef: telebirrRef });
-                                                                            } else if (telebirrAmount) {
-                                                                                alert(`Amount must be at least ${targetAmount.toLocaleString()} ETB`);
-                                                                            }
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    Pay via Telebirr
-                                                                </button>
+                                                        {m.status === "PAID" && (m as any).telebirrRef && (
+                                                            <div className="text-[10px] text-green-600">
+                                                                Paid: {(m as any).telebirrRef}{(m as any).telebirrAmount != null && ` (${(m as any).telebirrAmount.toLocaleString()} ETB)`}
                                                             </div>
                                                         )}
-                                                        {m.status === "PAID" && !(m as any).driverAcceptedAt && isAdmin && (
-                                                            <div className="text-[10px] text-green-600 mt-1">
-                                                                Paid via Telebirr: {(m as any).telebirrRef || m.paymentTxRef || "—"}
-                                                                {(m as any).telebirrAmount != null && ` (${(m as any).telebirrAmount.toLocaleString()} ETB)`}
-                                                            </div>
-                                                        )}
-                                                        {m.status === "DRIVER_ACCEPTED" && isAdmin && (
-                                                            <button
-                                                                className="h-6 rounded bg-cyan-100 px-1.5 text-[10px] font-medium text-cyan-700 hover:bg-cyan-200 mt-1"
-                                                                onClick={() => handleUpdateMaintenance(m.id, { status: "COMPLETED", adminConfirmedAt: new Date().toISOString() })}
-                                                            >
-                                                                Confirm Handover
-                                                            </button>
-                                                        )}
-                                                        {m.status === "BUS_READY" && isAdmin && (
-                                                            <button
-                                                                className="h-6 rounded bg-blue-100 px-1.5 text-[10px] font-medium text-blue-700 hover:bg-blue-200 mt-1"
-                                                                onClick={() => handleUpdateMaintenance(m.id, { driverAcceptedAt: new Date().toISOString(), status: "DRIVER_ACCEPTED" })}
-                                                            >
-                                                                Driver Accepted
-                                                            </button>
-                                                        )}
-                                                        <select
-                                                            className="h-7 rounded border px-1 text-xs"
-                                                            value={bus?.status || ""}
-                                                            onChange={(e) =>
-                                                                handleUpdateMaintenance(
-                                                                    m.id,
-                                                                    {},
-                                                                    e.target.value,
-                                                                )
-                                                            }
-                                                        >
-                                                            <option value="active">Active</option>
-                                                            <option value="maintenance">Maintenance</option>
-                                                            <option value="inactive">Inactive</option>
-                                                            <option value="retired">Retired</option>
-                                                        </select>
-                                                        <input
-                                                            type="date"
-                                                            className="h-7 rounded border px-1 text-xs"
-                                                            value={
-                                                                m.ownerPickupDate
-                                                                    ? m.ownerPickupDate.split("T")[0]
-                                                                    : ""
-                                                            }
-                                                            onChange={(e) =>
-                                                                handleUpdateMaintenance(m.id, {
-                                                                    ownerPickupDate: e.target.value || null,
-                                                                })
-                                                            }
-                                                            title="Owner pickup date"
-                                                        />
-                                                        <input
-                                                            className="h-7 w-20 rounded border px-1 text-xs"
-                                                            placeholder="Cost"
-                                                            type="number"
-                                                            defaultValue={m.actualCost || ""}
-                                                            onBlur={(e) =>
-                                                                handleUpdateMaintenance(m.id, {
-                                                                    actualCost: e.target.value
-                                                                        ? Number(e.target.value)
-                                                                        : null,
-                                                                })
-                                                            }
-                                                        />
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-2">
@@ -856,8 +1108,8 @@ export default function GarageManagement() {
                             </table>
                         </div>
                     ) : (
-                        <div className="grid gap-4">
-                            {maintenances.map((m) => {
+                        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+                            {activeMaintenances.map((m) => {
                                 const countdown = daysUntil(m.scheduledDate);
                                 const bus = buses.find((b) => b.id === m.busId);
                                 return (
@@ -989,91 +1241,147 @@ export default function GarageManagement() {
 
                                         <div className="mt-4 border-t pt-3">
                                             <p className="text-xs font-semibold text-muted-foreground mb-2">
-                                                Mechanic Actions:
+                                                Next Action:
                                             </p>
                                             <div className="flex flex-wrap gap-2">
-                                                <select
-                                                    className="h-8 rounded border px-2 text-xs"
-                                                    value={m.status}
-                                                    onChange={(e) =>
-                                                        handleUpdateMaintenance(m.id, {
-                                                            status: e.target.value,
-                                                            completedDate:
-                                                                e.target.value === "COMPLETED"
-                                                                    ? new Date().toISOString()
-                                                                    : undefined,
-                                                        })
-                                                    }
-                                                >
-                                                    <option value="REQUESTED">Requested</option>
-                                                    <option value="ACCEPTED">Accepted</option>
-                                                    <option value="NOT_FIXABLE">Not Fixable</option>
-                                                    <option value="COST_PENDING">Cost Pending</option>
-                                                    <option value="COST_APPROVED">Cost Approved</option>
-                                                    <option value="SCHEDULED">Scheduled</option>
-                                                    <option value="IN_PROGRESS">In Progress</option>
-                                                    <option value="PARTS_ORDERED">Parts Ordered</option>
-                                                    <option value="REPAIR_DONE">Repair Done</option>
-                                                    <option value="AWAITING_PAYMENT">Awaiting Payment</option>
-                                                    <option value="PAID">Paid</option>
-                                                    <option value="BUS_READY">Bus Ready</option>
-                                                    <option value="DRIVER_ACCEPTED">Driver Accepted</option>
-                                                    <option value="COMPLETED">Completed</option>
-                                                    <option value="CANCELLED">Cancelled</option>
-                                                </select>
-                                                <select
-                                                    className="h-8 rounded border px-2 text-xs"
-                                                    value={bus?.status || ""}
-                                                    onChange={(e) =>
-                                                        handleUpdateMaintenance(
-                                                            m.id,
-                                                            {},
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                >
-                                                    <option value="active">Bus: Active</option>
-                                                    <option value="maintenance">Bus: Maintenance</option>
-                                                    <option value="inactive">Bus: Inactive</option>
-                                                    <option value="retired">Bus: Retired</option>
-                                                </select>
+                                                {m.status === "REQUESTED" && (
+                                                    <button
+                                                        className="h-8 rounded bg-blue-100 px-3 text-xs font-medium text-blue-700 hover:bg-blue-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "ACCEPTED", acceptedAt: new Date().toISOString() })}
+                                                    >
+                                                        <CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Accept
+                                                    </button>
+                                                )}
+                                                {m.status === "ACCEPTED" && (
+                                                    <button
+                                                        className="h-8 rounded bg-amber-100 px-3 text-xs font-medium text-amber-700 hover:bg-amber-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "COST_PENDING" })}
+                                                    >
+                                                        Submit Cost
+                                                    </button>
+                                                )}
+                                                {m.status === "COST_PENDING" && (isAdmin || isStaff) && (
+                                                    <button
+                                                        className="h-8 rounded bg-emerald-100 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "COST_APPROVED" })}
+                                                    >
+                                                        <CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Approve Cost
+                                                    </button>
+                                                )}
+                                                {m.status === "COST_APPROVED" && (
+                                                    <button
+                                                        className="h-8 rounded bg-blue-100 px-3 text-xs font-medium text-blue-700 hover:bg-blue-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "SCHEDULED" })}
+                                                    >
+                                                        Schedule
+                                                    </button>
+                                                )}
+                                                {m.status === "SCHEDULED" && (
+                                                    <button
+                                                        className="h-8 rounded bg-blue-100 px-3 text-xs font-medium text-blue-700 hover:bg-blue-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "IN_PROGRESS" })}
+                                                    >
+                                                        Start Work
+                                                    </button>
+                                                )}
+                                                {m.status === "IN_PROGRESS" && (
+                                                    <button
+                                                        className="h-8 rounded bg-teal-100 px-3 text-xs font-medium text-teal-700 hover:bg-teal-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "REPAIR_DONE" })}
+                                                    >
+                                                        Repair Done
+                                                    </button>
+                                                )}
+                                                {m.status === "PARTS_ORDERED" && (
+                                                    <button
+                                                        className="h-8 rounded bg-blue-100 px-3 text-xs font-medium text-blue-700 hover:bg-blue-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "IN_PROGRESS" })}
+                                                    >
+                                                        Start Repair
+                                                    </button>
+                                                )}
+                                                {m.status === "REPAIR_DONE" && (
+                                                    <button
+                                                        className="h-8 rounded bg-violet-100 px-3 text-xs font-medium text-violet-700 hover:bg-violet-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "AWAITING_PAYMENT" })}
+                                                    >
+                                                        Request Payment
+                                                    </button>
+                                                )}
+                                                {m.status === "AWAITING_PAYMENT" && (isAdmin || isStaff) && (
+                                                    <button
+                                                        className="h-8 rounded bg-violet-100 px-3 text-xs font-medium text-violet-700 hover:bg-violet-200"
+                                                        onClick={() => {
+                                                            const targetAmount = m.actualCost || m.estimatedCost || 0;
+                                                            const telebirrRef = prompt(`Enter Telebirr reference number:\nAmount to pay: ${targetAmount.toLocaleString()} ETB`);
+                                                            if (telebirrRef) {
+                                                                const telebirrAmount = prompt(`Confirm Telebirr payment amount:`);
+                                                                if (telebirrAmount && Number(telebirrAmount) >= targetAmount) {
+                                                                    handleUpdateMaintenance(m.id, { status: "PAID", telebirrRef, telebirrAmount: Number(telebirrAmount), paymentTxRef: telebirrRef });
+                                                                } else if (telebirrAmount) {
+                                                                    alert(`Amount must be at least ${targetAmount.toLocaleString()} ETB`);
+                                                                }
+                                                            }
+                                                        }}
+                                                    >
+                                                        Pay via Telebirr
+                                                    </button>
+                                                )}
+                                                {m.status === "PAID" && (
+                                                    <button
+                                                        className="h-8 rounded bg-sky-100 px-3 text-xs font-medium text-sky-700 hover:bg-sky-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "BUS_READY" })}
+                                                    >
+                                                        Bus Ready
+                                                    </button>
+                                                )}
+                                                {m.status === "BUS_READY" && (
+                                                    <span className="text-xs text-amber-600 italic flex items-center gap-1">
+                                                        <Clock className="inline h-3.5 w-3.5" />Waiting for driver to accept
+                                                    </span>
+                                                )}
+                                                {m.status === "DRIVER_ACCEPTED" && (isAdmin || isStaff) && (
+                                                    <button
+                                                        className="h-8 rounded bg-emerald-100 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-200"
+                                                        onClick={() => handleUpdateMaintenance(m.id, { status: "COMPLETED", adminConfirmedAt: new Date().toISOString(), completedDate: new Date().toISOString() })}
+                                                    >
+                                                        <CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Confirm Handover
+                                                    </button>
+                                                )}
+                                                {m.status === "NOT_FIXABLE" && (
+                                                    <button
+                                                        className="h-8 rounded bg-red-100 px-3 text-xs font-medium text-red-700 hover:bg-red-200"
+                                                        onClick={() => {
+                                                            if (confirm("Cancel this maintenance record?")) handleUpdateMaintenance(m.id, { status: "CANCELLED" });
+                                                        }}
+                                                    >
+                                                        <Ban className="inline h-3.5 w-3.5 mr-1" />Cancel
+                                                    </button>
+                                                )}
+                                                {(m.status === "COMPLETED" || m.status === "CANCELLED") && (
+                                                    <span className="text-xs text-muted-foreground italic self-center">No action needed</span>
+                                                )}
+                                            </div>
+                                            <div className="mt-3 flex flex-wrap gap-2">
                                                 <input
                                                     type="date"
                                                     className="h-8 rounded border px-2 text-xs"
-                                                    value={
-                                                        m.ownerPickupDate
-                                                            ? m.ownerPickupDate.split("T")[0]
-                                                            : ""
-                                                    }
-                                                    onChange={(e) =>
-                                                        handleUpdateMaintenance(m.id, {
-                                                            ownerPickupDate: e.target.value || null,
-                                                        })
-                                                    }
+                                                    value={m.ownerPickupDate ? m.ownerPickupDate.split("T")[0] : ""}
+                                                    onChange={(e) => handleUpdateMaintenance(m.id, { ownerPickupDate: e.target.value || null })}
                                                     title="Owner pickup date"
                                                 />
                                                 <input
                                                     className="h-8 w-32 rounded border px-2 text-xs"
                                                     placeholder="Mechanic notes"
                                                     defaultValue={m.mechanicNotes || ""}
-                                                    onBlur={(e) =>
-                                                        handleUpdateMaintenance(m.id, {
-                                                            mechanicNotes: e.target.value,
-                                                        })
-                                                    }
+                                                    onBlur={(e) => handleUpdateMaintenance(m.id, { mechanicNotes: e.target.value })}
                                                 />
                                                 <input
                                                     className="h-8 w-24 rounded border px-2 text-xs"
                                                     placeholder="Actual cost"
                                                     type="number"
                                                     defaultValue={m.actualCost || ""}
-                                                    onBlur={(e) =>
-                                                        handleUpdateMaintenance(m.id, {
-                                                            actualCost: e.target.value
-                                                                ? Number(e.target.value)
-                                                                : null,
-                                                        })
-                                                    }
+                                                    onBlur={(e) => handleUpdateMaintenance(m.id, { actualCost: e.target.value ? Number(e.target.value) : null })}
                                                 />
                                             </div>
                                         </div>

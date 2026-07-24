@@ -35,6 +35,12 @@ export async function GET() {
                 : null,
             distanceKm: route.distanceKm,
             defaultPrice: route.defaultPrice,
+            hasInverse: routes.some(
+                (r) =>
+                    r.id !== route.id &&
+                    r.originStationId === route.destinationStationId &&
+                    r.destinationStationId === route.originStationId,
+            ),
         }));
 
         return NextResponse.json(payload);
@@ -61,7 +67,55 @@ export async function POST(req: Request) {
             destinationStationId?: string;
             distanceKm?: number | string;
             defaultPrice?: number | string;
+            createInverse?: boolean;
+            inverseOfRouteId?: string;
         };
+
+        // Action: add the inverse (return) route for an existing route, so
+        // admin/staff can enable bidirectional booking on demand.
+        if (body?.inverseOfRouteId) {
+            const source = await prisma.route.findUnique({
+                where: { id: String(body.inverseOfRouteId).trim() },
+            });
+            if (!source) {
+                return NextResponse.json(
+                    { error: "route_not_found" },
+                    { status: 404 },
+                );
+            }
+            if (source.originStationId === source.destinationStationId) {
+                return NextResponse.json(
+                    { error: "self_inverse" },
+                    { status: 400 },
+                );
+            }
+            const existing = await prisma.route.findUnique({
+                where: {
+                    originStationId_destinationStationId: {
+                        originStationId: source.destinationStationId,
+                        destinationStationId: source.originStationId,
+                    },
+                },
+            });
+            if (existing) {
+                return NextResponse.json({
+                    id: existing.id,
+                    inverseCreated: false,
+                });
+            }
+            const inverse = await prisma.route.create({
+                data: {
+                    originStationId: source.destinationStationId,
+                    destinationStationId: source.originStationId,
+                    distanceKm: source.distanceKm,
+                    defaultPrice: source.defaultPrice,
+                },
+            });
+            return NextResponse.json({
+                id: inverse.id,
+                inverseCreated: true,
+            });
+        }
 
         const originStationId = String(body?.originStationId || "").trim();
         const destinationStationId = String(
@@ -74,23 +128,57 @@ export async function POST(req: Request) {
             );
         }
 
+        const distanceKm =
+            body?.distanceKm !== undefined && body?.distanceKm !== null
+                ? Number(body.distanceKm)
+                : null;
+        const defaultPrice =
+            body?.defaultPrice !== undefined && body?.defaultPrice !== null
+                ? Number(body.defaultPrice)
+                : null;
+
         const created = await prisma.route.create({
             data: {
                 originStationId,
                 destinationStationId,
-                distanceKm:
-                    body?.distanceKm !== undefined && body?.distanceKm !== null
-                        ? Number(body.distanceKm)
-                        : null,
-                defaultPrice:
-                    body?.defaultPrice !== undefined &&
-                    body?.defaultPrice !== null
-                        ? Number(body.defaultPrice)
-                        : null,
+                distanceKm,
+                defaultPrice,
             },
         });
 
-        return NextResponse.json({ id: created.id });
+        // Auto-create the inverse (return) route so passengers can book both
+        // directions. Skips if the inverse already exists or the route is a
+        // self-loop. Disable with createInverse: false.
+        let inverseId: string | undefined;
+        const wantInverse = body?.createInverse !== false;
+        if (
+            wantInverse &&
+            originStationId !== destinationStationId
+        ) {
+            const existingInverse = await prisma.route.findUnique({
+                where: {
+                    originStationId_destinationStationId: {
+                        originStationId: destinationStationId,
+                        destinationStationId: originStationId,
+                    },
+                },
+            });
+            if (existingInverse) {
+                inverseId = existingInverse.id;
+            } else {
+                const inverse = await prisma.route.create({
+                    data: {
+                        originStationId: destinationStationId,
+                        destinationStationId: originStationId,
+                        distanceKm,
+                        defaultPrice,
+                    },
+                });
+                inverseId = inverse.id;
+            }
+        }
+
+        return NextResponse.json({ id: created.id, inverseId });
     } catch (error) {
         console.error("[routes] create failed", error);
         return NextResponse.json({ error: "server_error" }, { status: 500 });

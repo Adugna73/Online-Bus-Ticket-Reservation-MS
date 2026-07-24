@@ -28,6 +28,15 @@ export async function GET(req: Request) {
                 return NextResponse.json([]);
             }
             where.garageId = garage.id;
+        } else if (role === "driver") {
+            // A driver sees maintenance tasks for buses they are assigned to,
+            // whether via the maintenance record's driverId or the bus's own
+            // driverId. This stays correct even if the record's driverId was
+            // not explicitly set during release.
+            where.OR = [
+                { driverId: session.user.id },
+                { bus: { driverId: session.user.id } },
+            ];
         } else if (garageId) {
             where.garageId = garageId;
         }
@@ -44,6 +53,7 @@ export async function GET(req: Request) {
                         model: true,
                         status: true,
                         driverName: true,
+                        driverId: true,
                         seatCount: true,
                     },
                 },
@@ -180,6 +190,50 @@ export async function PATCH(req: Request) {
         const id = String(body?.id || "").trim();
         if (!id) {
             return NextResponse.json({ error: "id_required" }, { status: 400 });
+        }
+
+        const role = String(session.user.role || "").toLowerCase();
+
+        // Fetch the current record to validate status transitions.
+        const existing = await (prisma.vehicleMaintenance as any).findUnique({
+            where: { id },
+            select: { id: true, status: true, busId: true, driverId: true },
+        });
+        if (!existing) {
+            return NextResponse.json({ error: "not_found" }, { status: 404 });
+        }
+
+        // Only the assigned driver can accept the bus (BUS_READY → DRIVER_ACCEPTED).
+        // Admin/staff/garage_owner must NOT be able to mark the driver as accepted
+        // on the driver's behalf — the driver must accept it themselves.
+        if (body?.status === "DRIVER_ACCEPTED") {
+            if (role !== "driver") {
+                return NextResponse.json(
+                    { error: "only_driver_can_accept_bus" },
+                    { status: 403 },
+                );
+            }
+            if (existing.status !== "BUS_READY") {
+                return NextResponse.json(
+                    { error: "bus_not_ready_for_acceptance" },
+                    { status: 400 },
+                );
+            }
+            // Driver accepted — update bus status to active.
+            body.busStatus = "active";
+        }
+
+        // Admin can only confirm handover (→ COMPLETED) after the driver has
+        // accepted the bus (status must be DRIVER_ACCEPTED).
+        if (body?.status === "COMPLETED" && role !== "driver") {
+            if (existing.status !== "DRIVER_ACCEPTED") {
+                return NextResponse.json(
+                    { error: "driver_must_accept_first" },
+                    { status: 400 },
+                );
+            }
+            // Ensure bus is active upon final completion.
+            body.busStatus = "active";
         }
 
         const updateData: any = {

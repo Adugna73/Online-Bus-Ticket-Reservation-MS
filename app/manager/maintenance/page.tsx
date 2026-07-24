@@ -9,7 +9,7 @@ export default async function ManagerMaintenancePage() {
     const templates = JSON.parse(raw) as any[];
     return (
         <DashboardShell>
-            <div className="max-w-7xl mx-auto py-8 px-4">
+            <div className="w-full py-8 px-4 md:px-6">
                 <h1 className="text-2xl font-semibold mb-6">
                     Trips & Schedules Templates
                 </h1>

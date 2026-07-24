@@ -20,7 +20,7 @@ export default async function StaffMaintenancePage() {
 
     return (
         <DashboardShell>
-            <div className="max-w-7xl mx-auto py-8 px-4">
+            <div className="w-full py-8 px-4 md:px-6">
                 <h1 className="text-2xl font-semibold mb-6">
                     Maintenance &amp; Garage Service
                 </h1>

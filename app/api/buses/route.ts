@@ -2,6 +2,28 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { VehicleMaintenanceStatus } from "@prisma/client";
+
+const MAINTENANCE_TERMINAL_STATUSES = [
+    VehicleMaintenanceStatus.COMPLETED,
+    VehicleMaintenanceStatus.CANCELLED,
+    VehicleMaintenanceStatus.NOT_FIXABLE,
+];
+
+// Resolve a DRIVER user by full name (case-insensitive) so Bus.driverId stays
+// in sync with Bus.driverName. Returns null when no matching driver exists.
+async function resolveDriverIdByName(name: string): Promise<string | null> {
+    const trimmed = String(name || "").trim();
+    if (!trimmed) return null;
+    const driver = await prisma.user.findFirst({
+        where: {
+            role: "DRIVER",
+            fullName: { equals: trimmed, mode: "insensitive" },
+        },
+        select: { id: true },
+    });
+    return driver?.id || null;
+}
 
 export async function GET() {
     try {
@@ -15,6 +37,12 @@ export async function GET() {
             orderBy: { createdAt: "desc" },
             take: 200,
         });
+
+        const activeMaint = await prisma.vehicleMaintenance.findMany({
+            where: { status: { notIn: MAINTENANCE_TERMINAL_STATUSES } },
+            select: { busId: true },
+        });
+        const underMaintenanceIds = new Set(activeMaint.map((m) => m.busId));
 
         const payload = buses.map((bus) => ({
             id: bus.id,
@@ -31,6 +59,7 @@ export async function GET() {
             safetyChecklist: bus.safetyChecklist,
             seatLayout: bus.seatLayout,
             companyName: bus.company?.name || null,
+            underMaintenance: underMaintenanceIds.has(bus.id),
         }));
 
         return NextResponse.json(payload);
@@ -102,6 +131,10 @@ export async function POST(req: Request) {
         }
 
         const created = await prisma.$transaction(async (tx) => {
+            const driverName = String(body?.driverName || "").trim() || null;
+            const driverId = driverName
+                ? await resolveDriverIdByName(driverName)
+                : null;
             const bus = await tx.bus.create({
                 data: {
                     companyId: resolvedCompanyId,
@@ -112,7 +145,8 @@ export async function POST(req: Request) {
                     status:
                         String(body?.status || "active").trim() || "active",
                     level: String(body?.level || "").trim() || null,
-                    driverName: String(body?.driverName || "").trim() || null,
+                    driverName,
+                    driverId,
                     imageUrl: String(body?.imageUrl || "").trim() || null,
                     amenities: Array.isArray(body?.amenities)
                         ? body?.amenities
@@ -183,6 +217,18 @@ export async function PATCH(req: Request) {
                 : undefined;
 
         const updated = await prisma.$transaction(async (tx) => {
+            // Keep Bus.driverId in sync with driverName so the driver can
+            // always see their assigned bus. Only re-resolve when driverName
+            // is explicitly provided in the update.
+            let driverIdSync: { driverId: string | null } | undefined;
+            if (body?.driverName !== undefined) {
+                const driverName = String(body.driverName || "").trim();
+                driverIdSync = {
+                    driverId: driverName
+                        ? await resolveDriverIdByName(driverName)
+                        : null,
+                };
+            }
             const bus = await tx.bus.update({
                 where: { id },
                 data: {
@@ -195,6 +241,7 @@ export async function PATCH(req: Request) {
                     status: body?.status || undefined,
                     level: body?.level || undefined,
                     driverName: body?.driverName || undefined,
+                    ...driverIdSync,
                     imageUrl: body?.imageUrl || undefined,
                     amenities: Array.isArray(body?.amenities)
                         ? body?.amenities
